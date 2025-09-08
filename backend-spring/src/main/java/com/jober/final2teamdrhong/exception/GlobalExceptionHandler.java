@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -60,7 +61,70 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(new ErrorResponse(ex.getMessage()));
     }
 
-    // 3. Rate Limiting 예외 처리 - Auth API에서는 UserSignupResponseDto 반환
+    // 3. 인증 관련 예외 처리 (로그인 실패, 인증 코드 불일치 등)
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<?> handleAuthenticationException(AuthenticationException ex, HttpServletRequest request) {
+        log.warn("Authentication failed: path={}, error={}", request.getRequestURI(), ex.getMessage());
+        
+        if (isAuthApi(request)) {
+            // 로그인 API의 경우 UserLoginResponseDto 형태로 에러 응답 (향후 구현 시)
+            if (request.getRequestURI().contains("/login")) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                    new ErrorResponse(ex.getMessage())  // 현재는 ErrorResponse 사용, 추후 LoginResponseDto 구조 변경 가능
+                );
+            }
+            // 다른 Auth API는 UserSignupResponseDto 사용
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                UserSignupResponseDto.failure(ex.getMessage())
+            );
+        }
+        
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse(ex.getMessage()));
+    }
+    
+    // 4. 중복 리소스 예외 처리 (이메일 중복 등)
+    @ExceptionHandler(DuplicateResourceException.class)
+    public ResponseEntity<?> handleDuplicateResourceException(DuplicateResourceException ex, HttpServletRequest request) {
+        log.warn("Duplicate resource: path={}, error={}", request.getRequestURI(), ex.getMessage());
+        
+        if (isAuthApi(request)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(
+                UserSignupResponseDto.failure(ex.getMessage())
+            );
+        }
+        
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponse(ex.getMessage()));
+    }
+    
+    // 5. 일반 비즈니스 예외 처리 (인증 코드 만료, 업무 규칙 위반 등)
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<?> handleBusinessException(BusinessException ex, HttpServletRequest request) {
+        log.warn("Business logic error: path={}, error={}", request.getRequestURI(), ex.getMessage());
+        
+        if (isAuthApi(request)) {
+            return ResponseEntity.badRequest().body(
+                UserSignupResponseDto.failure(ex.getMessage())
+            );
+        }
+        
+        return ResponseEntity.badRequest().body(new ErrorResponse(ex.getMessage()));
+    }
+    
+    // 6. Spring Security BadCredentialsException 처리 (기존 호환성 유지)
+    @ExceptionHandler(BadCredentialsException.class)
+    public ResponseEntity<?> handleBadCredentialsException(BadCredentialsException ex, HttpServletRequest request) {
+        log.warn("Bad credentials: path={}, error={}", request.getRequestURI(), ex.getMessage());
+        
+        if (isAuthApi(request)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                new ErrorResponse(ex.getMessage())
+            );
+        }
+        
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse(ex.getMessage()));
+    }
+
+    // 7. Rate Limiting 예외 처리 - Auth API에서는 UserSignupResponseDto 반환
     @ExceptionHandler(RateLimitExceededException.class)
     public ResponseEntity<?> handleRateLimitExceededException(RateLimitExceededException ex, HttpServletRequest request) {
         log.warn("Rate limit exceeded: path={}, message={}, retry after {} seconds", 
