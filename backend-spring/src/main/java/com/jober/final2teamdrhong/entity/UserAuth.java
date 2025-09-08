@@ -8,7 +8,10 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "users_auth")
+@Table(name = "users_auth", uniqueConstraints = {
+        @UniqueConstraint(name = "uk_type_social_id",
+                columnNames = {"auth_type","social_id"}) //social_id는 특정 authType내에서 고유해야함
+})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class UserAuth {
