@@ -58,6 +58,10 @@ dependencies {
     implementation 'com.bucket4j:bucket4j-redis:8.10.1'
     // lettuce-core 버전을 Spring Boot가 관리하도록 제거 (Spring Boot 3.5.5는 6.4.x를 사용)
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0'
+    // JWT 라이브러리
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
     implementation 'org.thymeleaf.extras:thymeleaf-extras-springsecurity6'
