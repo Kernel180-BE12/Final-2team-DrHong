@@ -1,14 +1,22 @@
 package com.jober.final2teamdrhong.service;
 
+import com.jober.final2teamdrhong.config.JwtConfig;
+import com.jober.final2teamdrhong.dto.UserLoginRequest;
+import com.jober.final2teamdrhong.dto.UserLoginResponse;
 import com.jober.final2teamdrhong.dto.UserSignupRequestDto;
 import com.jober.final2teamdrhong.entity.User;
 import com.jober.final2teamdrhong.entity.UserAuth;
-import com.jober.final2teamdrhong.exception.RateLimitExceededException;
 import com.jober.final2teamdrhong.repository.UserRepository;
 import com.jober.final2teamdrhong.service.storage.VerificationStorage;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import com.jober.final2teamdrhong.exception.AuthenticationException;
+import com.jober.final2teamdrhong.exception.DuplicateResourceException;
+import com.jober.final2teamdrhong.exception.BusinessException;
+import com.jober.final2teamdrhong.util.LogMaskingUtil;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +30,7 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final RateLimitService rateLimitService;
+    private final JwtConfig jwtConfig;
 
     /**
      * Rate limiting과 함께 회원가입 처리
@@ -92,7 +101,7 @@ public class UserService {
     private void validateBusinessRules(UserSignupRequestDto requestDto) {
         // 이메일 중복 확인 (비즈니스 규칙)
         if (userRepository.findByUserEmail(requestDto.getEmail()).isPresent()) {
-            throw new IllegalArgumentException("이미 가입된 이메일입니다.");
+            throw new DuplicateResourceException("이미 가입된 이메일입니다.");
         }
         
         // 추가 비즈니스 규칙들이 여기에 들어갈 수 있음
@@ -104,14 +113,14 @@ public class UserService {
         rateLimitService.checkEmailVerifyRateLimit(email);
         
         String savedCode = verificationStorage.find(email)
-                .orElseThrow(() -> new IllegalArgumentException("인증 코드가 만료되었거나 유효하지 않습니다."));
+                .orElseThrow(() -> new BusinessException("인증 코드가 만료되었거나 유효하지 않습니다."));
         
         if (!constantTimeEquals(savedCode, inputCode)) {
-            log.warn("인증 코드 불일치: email={}", email);
-            throw new IllegalArgumentException("인증 코드가 일치하지 않습니다.");
+            log.warn("인증 코드 불일치: email={}", LogMaskingUtil.maskEmail(email));
+            throw new AuthenticationException("인증 코드가 일치하지 않습니다.");
         }
         
-        log.info("인증 코드 검증 성공: email={}", email);
+        log.info("인증 코드 검증 성공: email={}", LogMaskingUtil.maskEmail(email));
     }
     
     /**
@@ -132,5 +141,39 @@ public class UserService {
         }
 
         return result == 0;
+    }
+
+    public UserLoginResponse login(@Valid UserLoginRequest userLoginRequest) {
+        // 보안상 모든 인증 실패 상황에서 동일한 에러 메시지 사용
+        final String INVALID_CREDENTIALS_MESSAGE = "이메일 또는 비밀번호가 일치하지 않습니다.";
+        
+        // 1. 이메일 기반으로 User 조회
+        User user = userRepository.findByUserEmail(userLoginRequest.getEmail())
+                .orElseThrow(() -> new BadCredentialsException(INVALID_CREDENTIALS_MESSAGE));
+        
+        // 2. LOCAL 인증 방식 조회
+        UserAuth localAuth = user.getUserAuths().stream()
+                .filter(auth -> auth.getAuthType() == UserAuth.AuthType.LOCAL)
+                .findFirst()
+                .orElseThrow(() -> new BadCredentialsException(INVALID_CREDENTIALS_MESSAGE));
+
+        // 3. 비밀번호 검증 (타이밍 공격 방지를 위한 상수시간 비교)
+        if (!passwordEncoder.matches(userLoginRequest.getPassword(), localAuth.getPasswordHash())) {
+            throw new BadCredentialsException(INVALID_CREDENTIALS_MESSAGE);
+        }
+
+        // 4. 로그인 성공 처리: 마지막 로그인 시간 업데이트
+        localAuth.updateLastUsed();
+
+        // 5. JWT 생성 및 응답 DTO 반환
+        String token = jwtConfig.generateToken(user.getUserEmail(), user.getUserId().longValue());
+        
+        // 보안 강화: 민감한 정보 마스킹
+        log.info("로그인 성공: userId={}, email={}, token={}", 
+                LogMaskingUtil.maskUserId(user.getUserId().longValue()), 
+                LogMaskingUtil.maskEmail(user.getUserEmail()),
+                LogMaskingUtil.maskToken(token));
+        
+        return UserLoginResponse.of(user, token);
     }
 }
