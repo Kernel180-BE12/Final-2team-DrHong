@@ -17,6 +17,17 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
+/**
+ * Rate Limiting 서비스
+ * 
+ * 기능별 Rate Limiting 제공:
+ * - 이메일 발송: IP당 5분간 3회
+ * - 이메일 인증: 이메일당 10분간 5회  
+ * - 회원가입: IP당 1시간간 10회
+ * - 로그인: IP당 15분간 5회
+ * 
+ * Redis 사용 가능시 분산 환경 지원, 불가능시 인메모리 폴백 사용
+ */
 @Service
 @Slf4j
 public class RateLimitService {
@@ -34,6 +45,10 @@ public class RateLimitService {
         this.rateLimitConfig = rateLimitConfig;
         this.proxyManager = proxyManager;
     }
+    
+    // =========================================
+    // 허용 여부 체크 메서드들 (Allowed Methods)
+    // =========================================
     
     public boolean isEmailSendAllowed(String ipAddress) {
         String key = "email_send:" + ipAddress;
@@ -53,6 +68,16 @@ public class RateLimitService {
         return bucket.tryConsume(1);
     }
     
+    public boolean isLoginAllowed(String ipAddress) {
+        String key = "login:" + ipAddress;
+        Bucket bucket = getBucket(key, () -> createLoginBucketConfig());
+        return bucket.tryConsume(1);
+    }
+    
+    // =========================================
+    // 대기 시간 계산 메서드들 (Wait Time Methods)  
+    // =========================================
+    
     public long getEmailSendWaitTime(String ipAddress) {
         String key = "email_send:" + ipAddress;
         Bucket bucket = getBucket(key, () -> createEmailSendBucketConfig());
@@ -71,29 +96,15 @@ public class RateLimitService {
         return bucket.estimateAbilityToConsume(1).getNanosToWaitForRefill() / 1_000_000_000;
     }
     
-    private Bucket getBucket(String key, Supplier<BucketConfiguration> configSupplier) {
-        if (proxyManager != null) {
-            // Redis 사용 가능한 경우
-            return proxyManager.builder()
-                    .build(key.getBytes(), configSupplier);
-        } else {
-            // Redis 비활성화 시 인메모리 폴백 사용
-            return inMemoryBuckets.computeIfAbsent(key, k -> 
-                Bucket.builder()
-                    .addLimit(getBandwidthFromConfig(configSupplier.get()))
-                    .build()
-            );
-        }
+    public long getLoginWaitTime(String ipAddress) {
+        String key = "login:" + ipAddress;
+        Bucket bucket = getBucket(key, () -> createLoginBucketConfig());
+        return bucket.estimateAbilityToConsume(1).getNanosToWaitForRefill() / 1_000_000_000;
     }
     
-    private Bandwidth getBandwidthFromConfig(BucketConfiguration config) {
-        // BucketConfiguration에서 첫 번째 Bandwidth 추출
-        Bandwidth[] bandwidths = config.getBandwidths();
-        if (bandwidths.length == 0) {
-            throw new IllegalArgumentException("BucketConfiguration must have at least one bandwidth");
-        }
-        return bandwidths[0];
-    }
+    // =========================================
+    // 버킷 설정 메서드들 (Bucket Config Methods)
+    // =========================================
     
     private BucketConfiguration createEmailSendBucketConfig() {
         return BucketConfiguration.builder()
@@ -121,8 +132,47 @@ public class RateLimitService {
                 ))
                 .build();
     }
+
+    private BucketConfiguration createLoginBucketConfig() {
+        return BucketConfiguration.builder()
+                .addLimit(Bandwidth.simple(
+                        rateLimitConfig.getLogin().getRequestsPerWindow(),
+                        Duration.ofMinutes(rateLimitConfig.getLogin().getWindowDurationMinutes())
+                ))
+                .build();
+    }
     
-    // === 편의 메서드들 (중복 로직 제거) ===
+    // =========================================
+    // 내부 헬퍼 메서드들 (Internal Helpers)
+    // =========================================
+    
+    private Bucket getBucket(String key, Supplier<BucketConfiguration> configSupplier) {
+        if (proxyManager != null) {
+            // Redis 사용 가능한 경우
+            return proxyManager.builder()
+                    .build(key.getBytes(), configSupplier);
+        } else {
+            // Redis 비활성화 시 인메모리 폴백 사용
+            return inMemoryBuckets.computeIfAbsent(key, k -> 
+                Bucket.builder()
+                    .addLimit(getBandwidthFromConfig(configSupplier.get()))
+                    .build()
+            );
+        }
+    }
+    
+    private Bandwidth getBandwidthFromConfig(BucketConfiguration config) {
+        // BucketConfiguration에서 첫 번째 Bandwidth 추출
+        Bandwidth[] bandwidths = config.getBandwidths();
+        if (bandwidths.length == 0) {
+            throw new IllegalArgumentException("BucketConfiguration must have at least one bandwidth");
+        }
+        return bandwidths[0];
+    }
+    
+    // =========================================
+    // 편의 메서드들 (Public API Methods)
+    // =========================================
     
     /**
      * 이메일 발송 Rate Limiting 체크
@@ -167,4 +217,20 @@ public class RateLimitService {
             );
         }
     }
+
+    
+    /**
+     * 로그인 Rate Limiting 체크
+     */
+    public void checkLoginRateLimit(String clientIp) {
+        if (!isLoginAllowed(clientIp)) {
+            long waitTime = getLoginWaitTime(clientIp);
+            log.warn("로그인 시도 속도 제한 초과: ip={}, waitTime={}초", clientIp, waitTime);
+            throw new RateLimitExceededException(
+                "로그인 시도 속도 제한을 초과했습니다. " + waitTime + "초 후 다시 시도해주세요.", 
+                waitTime
+            );
+        }
+    }
+
 }
