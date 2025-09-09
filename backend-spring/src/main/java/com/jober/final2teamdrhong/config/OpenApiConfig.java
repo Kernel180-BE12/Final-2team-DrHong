@@ -29,10 +29,10 @@ public class OpenApiConfig {
         // 개발환경에 따른 서버 설정
         Server server = new Server();
         if (isDevelopment) {
-            server.url("http://localhost:8080/api")
+            server.url("http://localhost:8080")
                   .description("로컬 개발 서버");
         } else {
-            server.url("https://api.notimo.com/api")
+            server.url("https://api.notimo.com")
                   .description("운영 서버");
         }
 
