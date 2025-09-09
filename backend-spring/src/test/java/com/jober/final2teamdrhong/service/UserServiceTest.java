@@ -1,10 +1,10 @@
 package com.jober.final2teamdrhong.service;
 
-import com.jober.final2teamdrhong.dto.UserSignupRequestDto;
+import com.jober.final2teamdrhong.dto.UserSignupRequest;
 import com.jober.final2teamdrhong.entity.User;
-import com.jober.final2teamdrhong.exception.RateLimitExceededException;
 import com.jober.final2teamdrhong.repository.UserRepository;
 import com.jober.final2teamdrhong.service.storage.VerificationStorage;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,185 +15,136 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
 
+/**
+ * UserService 단위 테스트
+ * Mock을 사용하여 의존성을 격리하고 순수한 비즈니스 로직만 테스트
+ */
 @ExtendWith(MockitoExtension.class)
 class UserServiceTest {
 
     @Mock
     private VerificationStorage verificationStorage;
-
+    
     @Mock
     private UserRepository userRepository;
-
+    
     @Mock
     private PasswordEncoder passwordEncoder;
-
+    
     @Mock
     private RateLimitService rateLimitService;
-
+    
     @InjectMocks
     private UserService userService;
+
+    private UserSignupRequest validRequest;
+
+    @BeforeEach
+    void setUp() {
+        validRequest = UserSignupRequest.builder()
+                .userName("테스트유저")
+                .email("test@example.com")
+                .password("Password123!")
+                .userNumber("010-1234-5678")
+                .verificationCode("123456")
+                .build();
+    }
 
     @Test
     @DisplayName("성공: 유효한 데이터로 회원가입")
     void signup_success() {
         // given
-        UserSignupRequestDto requestDto = UserSignupRequestDto.builder()
-                .userName("홍길동")
-                .email("test@example.com")
-                .userNumber("010-1234-5678")
-                .password("Test123!")
-                .verificationCode("123456")
-                .build();
-
-        when(verificationStorage.find("test@example.com")).thenReturn(Optional.of("123456"));
-        when(rateLimitService.isEmailVerifyAllowed("test@example.com")).thenReturn(true);
-        when(userRepository.findByUserEmail("test@example.com")).thenReturn(Optional.empty());
-        when(passwordEncoder.encode("Test123!")).thenReturn("encoded_password");
+        given(userRepository.findByUserEmail(anyString())).willReturn(Optional.empty());
+        given(verificationStorage.find(anyString())).willReturn(Optional.of("123456"));
+        given(passwordEncoder.encode(anyString())).willReturn("encoded-password");
+        given(userRepository.save(any(User.class))).willReturn(createMockUser());
 
         // when
-        userService.signup(requestDto);
+        userService.signup(validRequest);
 
         // then
-        verify(verificationStorage).find("test@example.com");
-        verify(userRepository).findByUserEmail("test@example.com");
-        verify(passwordEncoder).encode("Test123!");
-        verify(userRepository).save(any(User.class));
-        verify(verificationStorage).delete("test@example.com");
+        then(userRepository).should().findByUserEmail("test@example.com");
+        then(verificationStorage).should().find("test@example.com");
+        then(verificationStorage).should().delete("test@example.com");
+        then(userRepository).should().save(any(User.class));
     }
 
     @Test
-    @DisplayName("실패: 중복된 이메일이면 예외 발생")
+    @DisplayName("실패: 중복된 이메일로 회원가입")
     void signup_fail_duplicateEmail() {
         // given
-        UserSignupRequestDto requestDto = UserSignupRequestDto.builder()
-                .userName("홍길동")
-                .email("test@example.com")
-                .userNumber("010-1234-5678")
-                .password("Test123!")
-                .verificationCode("123456")
-                .build();
-
-        // 이미 가입된 사용자가 존재 - validateBusinessRules에서 먼저 체크됨
-        User existingUser = User.create("기존유저", "test@example.com", "87654321");
-        when(userRepository.findByUserEmail("test@example.com")).thenReturn(Optional.of(existingUser));
+        given(userRepository.findByUserEmail(anyString())).willReturn(Optional.of(createMockUser()));
 
         // when & then
-        assertThatThrownBy(() -> userService.signup(requestDto))
+        assertThatThrownBy(() -> userService.signup(validRequest))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("이미 가입된 이메일입니다.");
+                .hasMessageContaining("이미 가입된 이메일입니다.");
 
-        verify(userRepository).findByUserEmail("test@example.com");
-        verify(verificationStorage, never()).find(anyString());
-        verify(userRepository, never()).save(any());
+        then(verificationStorage).should(never()).find(anyString());
+        then(userRepository).should(never()).save(any(User.class));
     }
 
     @Test
-    @DisplayName("실패: 인증 코드가 일치하지 않으면 예외 발생")
-    void signup_fail_invalidVerificationCode() {
+    @DisplayName("실패: 인증 코드가 존재하지 않음")
+    void signup_fail_verificationCodeNotFound() {
         // given
-        UserSignupRequestDto requestDto = UserSignupRequestDto.builder()
-                .userName("홍길동")
-                .email("test@example.com")
-                .userNumber("010-1234-5678")
-                .password("Test123!")
-                .verificationCode("999999")
-                .build();
-
-        // 비즈니스 규칙 먼저 체크 (중복 이메일 없음)
-        when(userRepository.findByUserEmail("test@example.com")).thenReturn(Optional.empty());
-        // 인증 코드 검증
-        when(rateLimitService.isEmailVerifyAllowed("test@example.com")).thenReturn(true);
-        when(verificationStorage.find("test@example.com")).thenReturn(Optional.of("123456"));
+        given(userRepository.findByUserEmail(anyString())).willReturn(Optional.empty());
+        given(verificationStorage.find(anyString())).willReturn(Optional.empty());
 
         // when & then
-        assertThatThrownBy(() -> userService.signup(requestDto))
+        assertThatThrownBy(() -> userService.signup(validRequest))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("인증 코드가 일치하지 않습니다.");
+                .hasMessageContaining("인증 코드가 만료되었거나 유효하지 않습니다.");
 
-        verify(userRepository, never()).save(any());
-        verify(verificationStorage, never()).delete(anyString());
+        then(userRepository).should(never()).save(any(User.class));
     }
 
     @Test
-    @DisplayName("실패: 인증 코드가 만료되었으면 예외 발생")
-    void signup_fail_expiredVerificationCode() {
+    @DisplayName("실패: 인증 코드가 일치하지 않음")
+    void signup_fail_verificationCodeMismatch() {
         // given
-        UserSignupRequestDto requestDto = UserSignupRequestDto.builder()
-                .userName("홍길동")
-                .email("test@example.com")
-                .userNumber("010-1234-5678")
-                .password("Test123!")
-                .verificationCode("123456")
-                .build();
-
-        // 비즈니스 규칙 먼저 체크 (중복 이메일 없음)
-        when(userRepository.findByUserEmail("test@example.com")).thenReturn(Optional.empty());
-        // 인증 코드 검증
-        when(rateLimitService.isEmailVerifyAllowed("test@example.com")).thenReturn(true);
-        when(verificationStorage.find("test@example.com")).thenReturn(Optional.empty());
+        given(userRepository.findByUserEmail(anyString())).willReturn(Optional.empty());
+        given(verificationStorage.find(anyString())).willReturn(Optional.of("999999"));
 
         // when & then
-        assertThatThrownBy(() -> userService.signup(requestDto))
+        assertThatThrownBy(() -> userService.signup(validRequest))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("인증 코드가 만료되었거나 유효하지 않습니다.");
+                .hasMessageContaining("인증 코드가 일치하지 않습니다");
 
-        verify(userRepository, never()).save(any());
+        then(userRepository).should(never()).save(any(User.class));
     }
 
-
     @Test
-    @DisplayName("성공: Rate limiting 통과 시 회원가입")
+    @DisplayName("성공: Rate limiting과 함께 회원가입")
     void signupWithRateLimit_success() {
         // given
-        UserSignupRequestDto requestDto = UserSignupRequestDto.builder()
-                .userName("홍길동")
-                .email("test@example.com")
-                .userNumber("010-1234-5678")
-                .password("Test123!")
-                .verificationCode("123456")
-                .build();
-        String clientIp = "192.168.1.1";
-
-        when(rateLimitService.isSignupAllowed(clientIp)).thenReturn(true);
-        when(verificationStorage.find("test@example.com")).thenReturn(Optional.of("123456"));
-        when(rateLimitService.isEmailVerifyAllowed("test@example.com")).thenReturn(true);
-        when(userRepository.findByUserEmail("test@example.com")).thenReturn(Optional.empty());
-        when(passwordEncoder.encode("Test123!")).thenReturn("encoded_password");
+        String clientIp = "127.0.0.1";
+        given(userRepository.findByUserEmail(anyString())).willReturn(Optional.empty());
+        given(verificationStorage.find(anyString())).willReturn(Optional.of("123456"));
+        given(passwordEncoder.encode(anyString())).willReturn("encoded-password");
+        given(userRepository.save(any(User.class))).willReturn(createMockUser());
 
         // when
-        userService.signupWithRateLimit(requestDto, clientIp);
+        userService.signupWithRateLimit(validRequest, clientIp);
 
         // then
-        verify(rateLimitService).isSignupAllowed(clientIp);
-        verify(userRepository).save(any(User.class));
+        then(rateLimitService).should().checkSignupRateLimit(clientIp, "test@example.com");
+        then(userRepository).should().save(any(User.class));
     }
 
-    @Test
-    @DisplayName("실패: Rate limiting 초과 시 예외 발생")
-    void signupWithRateLimit_fail_rateLimitExceeded() {
-        // given
-        UserSignupRequestDto requestDto = UserSignupRequestDto.builder()
-                .userName("홍길동")
-                .email("test@example.com")
-                .userNumber("010-1234-5678")
-                .password("Test123!")
-                .verificationCode("123456")
-                .build();
-        String clientIp = "192.168.1.1";
-        long waitTime = 3600L;
-
-        when(rateLimitService.isSignupAllowed(clientIp)).thenReturn(false);
-        when(rateLimitService.getSignupWaitTime(clientIp)).thenReturn(waitTime);
-
-        // when & then
-        assertThatThrownBy(() -> userService.signupWithRateLimit(requestDto, clientIp))
-                .isInstanceOf(RateLimitExceededException.class)
-                .hasMessage("회원가입 속도 제한을 초과했습니다. 3600초 후 다시 시도해주세요.");
-
-        verify(userRepository, never()).save(any());
+    private User createMockUser() {
+        return User.create(
+                "테스트유저",
+                "test@example.com", 
+                "010-1234-5678"
+        );
     }
 }

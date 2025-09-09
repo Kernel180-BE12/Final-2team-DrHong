@@ -30,8 +30,8 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/signup", "/api/auth/send-verification-code","/api/auth/login").permitAll() // 회원가입 관련 API는 누구나 접근 가능
-                        .requestMatchers("/api/swagger-ui/**", "/api/v3/api-docs/**", "/api/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**", "/swagger-resources/**", "/webjars/**").permitAll() // Swagger UI는 누구나 접근 가능
+                        .requestMatchers("/auth/signup", "/auth/send-verification-code", "/auth/login", "/auth/refresh-token", "/auth/logout").permitAll() // 회원가입 및 로그인 관련 API는 누구나 접근 가능
+                        .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html", "/swagger-resources/**", "/webjars/**").permitAll() // Swagger UI는 누구나 접근 가능
                         .anyRequest().authenticated() // 나머지 API는 인증된 사용자만 접근 가능
                 );
 

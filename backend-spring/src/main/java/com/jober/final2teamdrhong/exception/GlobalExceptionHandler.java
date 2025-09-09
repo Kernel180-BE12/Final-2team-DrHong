@@ -11,6 +11,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -172,6 +173,22 @@ public class GlobalExceptionHandler {
                 .body(response);
     }
 
+    // 4. JSON 파싱 오류 처리
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<?> handleHttpMessageNotReadableException(HttpMessageNotReadableException ex, HttpServletRequest request) {
+        log.warn("JSON 파싱 오류: path={}, error={}", request.getRequestURI(), ex.getMessage());
+        
+        // Auth API인지 확인하여 적절한 응답 타입 반환
+        if (isAuthApi(request)) {
+            return ResponseEntity.badRequest().body(
+                UserSignupResponse.failure("잘못된 요청 형식입니다.")
+            );
+        }
+
+        // 다른 API는 기존 ErrorResponse 사용
+        return ResponseEntity.badRequest().body(new ErrorResponse("잘못된 요청 형식입니다."));
+    }
+
     // 4. 위에서 처리하지 못한 모든 나머지 예외를 처리하는 최후의 보루
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleException(Exception ex, HttpServletRequest request) {
@@ -189,6 +206,6 @@ public class GlobalExceptionHandler {
      */
     private boolean isAuthApi(HttpServletRequest request) {
         String path = request.getRequestURI();
-        return path != null && path.startsWith("/api/auth/");
+        return path != null && path.startsWith("/auth/");
     }
 }

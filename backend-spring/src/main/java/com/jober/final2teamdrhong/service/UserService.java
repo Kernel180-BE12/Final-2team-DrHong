@@ -128,8 +128,9 @@ public class UserService {
      * 타이밍 공격을 방지하기 위한 상수 시간 문자열 비교
      */
     private boolean constantTimeEquals(String a, String b) {
+        // null 값은 항상 false (보안상 null == null도 인증 실패)
         if (a == null || b == null) {
-            return a == b;
+            return false;
         }
         
         if (a.length() != b.length()) {

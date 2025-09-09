@@ -1,6 +1,5 @@
 package com.jober.final2teamdrhong.service.storage;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -12,10 +11,13 @@ import java.util.Optional;
  * 빠른 속도와 TTL(만료 시간) 자동 처리 기능이 장점입니다.
  */
 @Component("redisStorage") // 이 구현체의 이름을 "redisStorage"로 지정
-@RequiredArgsConstructor
 public class RedisVerificationStorage implements VerificationStorage {
 
     private final StringRedisTemplate redisTemplate;
+    
+    public RedisVerificationStorage(StringRedisTemplate redisTemplate) {
+        this.redisTemplate = redisTemplate;
+    }
     private static final Duration CODE_EXPIRATION = Duration.ofMinutes(5); // 5분 유효
 
     @Override
