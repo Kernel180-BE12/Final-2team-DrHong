@@ -1,6 +1,7 @@
 package com.jober.final2teamdrhong.exception;
 
-import com.jober.final2teamdrhong.dto.UserSignupResponseDto;
+import com.jober.final2teamdrhong.dto.UserLoginResponse;
+import com.jober.final2teamdrhong.dto.UserSignupResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -37,8 +38,17 @@ public class GlobalExceptionHandler {
         // Auth API인지 확인하여 적절한 응답 타입 반환
         if (isAuthApi(request)) {
             log.warn("Auth API 검증 실패: path={}, error={}", request.getRequestURI(), errorMessage);
+            
+            // 로그인 API의 경우 UserLoginResponse 사용
+            if (request.getRequestURI().contains("/login")) {
+                return ResponseEntity.badRequest().body(
+                    UserLoginResponse.error(errorMessage)
+                );
+            }
+            
+            // 다른 Auth API는 UserSignupResponse 사용
             return ResponseEntity.badRequest().body(
-                UserSignupResponseDto.failure(errorMessage)
+                UserSignupResponse.failure(errorMessage)
             );
         }
 
@@ -53,7 +63,7 @@ public class GlobalExceptionHandler {
         if (isAuthApi(request)) {
             log.warn("Auth API 비즈니스 로직 오류: path={}, error={}", request.getRequestURI(), ex.getMessage());
             return ResponseEntity.badRequest().body(
-                UserSignupResponseDto.failure(ex.getMessage())
+                UserSignupResponse.failure(ex.getMessage())
             );
         }
 
@@ -67,15 +77,15 @@ public class GlobalExceptionHandler {
         log.warn("Authentication failed: path={}, error={}", request.getRequestURI(), ex.getMessage());
         
         if (isAuthApi(request)) {
-            // 로그인 API의 경우 UserLoginResponseDto 형태로 에러 응답 (향후 구현 시)
+            // 로그인 API의 경우 UserLoginResponse 형태로 에러 응답
             if (request.getRequestURI().contains("/login")) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
-                    new ErrorResponse(ex.getMessage())  // 현재는 ErrorResponse 사용, 추후 LoginResponseDto 구조 변경 가능
+                    UserLoginResponse.error(ex.getMessage())
                 );
             }
-            // 다른 Auth API는 UserSignupResponseDto 사용
+            // 다른 Auth API는 UserSignupResponse 사용
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
-                UserSignupResponseDto.failure(ex.getMessage())
+                UserSignupResponse.failure(ex.getMessage())
             );
         }
         
@@ -89,7 +99,7 @@ public class GlobalExceptionHandler {
         
         if (isAuthApi(request)) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(
-                UserSignupResponseDto.failure(ex.getMessage())
+                UserSignupResponse.failure(ex.getMessage())
             );
         }
         
@@ -103,28 +113,36 @@ public class GlobalExceptionHandler {
         
         if (isAuthApi(request)) {
             return ResponseEntity.badRequest().body(
-                UserSignupResponseDto.failure(ex.getMessage())
+                UserSignupResponse.failure(ex.getMessage())
             );
         }
         
         return ResponseEntity.badRequest().body(new ErrorResponse(ex.getMessage()));
     }
     
-    // 6. Spring Security BadCredentialsException 처리 (기존 호환성 유지)
+    // 6. Spring Security BadCredentialsException 처리 (로그인 전용 응답 개선)
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<?> handleBadCredentialsException(BadCredentialsException ex, HttpServletRequest request) {
         log.warn("Bad credentials: path={}, error={}", request.getRequestURI(), ex.getMessage());
         
+        // 로그인 API의 경우 전용 에러 응답 사용
+        if (request.getRequestURI().contains("/login")) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
+                UserLoginResponse.error(ex.getMessage())
+            );
+        }
+        
+        // 다른 Auth API는 기존 응답 유지
         if (isAuthApi(request)) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
-                new ErrorResponse(ex.getMessage())
+                UserSignupResponse.failure(ex.getMessage())
             );
         }
         
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse(ex.getMessage()));
     }
 
-    // 7. Rate Limiting 예외 처리 - Auth API에서는 UserSignupResponseDto 반환
+    // 7. Rate Limiting 예외 처리 - Auth API에서는 UserSignupResponse 반환
     @ExceptionHandler(RateLimitExceededException.class)
     public ResponseEntity<?> handleRateLimitExceededException(RateLimitExceededException ex, HttpServletRequest request) {
         log.warn("Rate limit exceeded: path={}, message={}, retry after {} seconds", 
@@ -132,9 +150,19 @@ public class GlobalExceptionHandler {
         
         // Auth API인지 확인하여 적절한 응답 타입 반환
         if (isAuthApi(request)) {
+            // 로그인 관련 API의 경우 UserLoginResponse 사용
+            if (request.getRequestURI().contains("/login") || 
+                request.getRequestURI().contains("/refresh") || 
+                request.getRequestURI().contains("/logout")) {
+                return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                        .header("Retry-After", String.valueOf(ex.getRetryAfterSeconds()))
+                        .body(UserLoginResponse.error(ex.getMessage()));
+            }
+            
+            // 다른 Auth API는 UserSignupResponse 사용
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                     .header("Retry-After", String.valueOf(ex.getRetryAfterSeconds()))
-                    .body(UserSignupResponseDto.failure(ex.getMessage()));
+                    .body(UserSignupResponse.failure(ex.getMessage()));
         }
 
         // 다른 API는 기존 ErrorResponse 사용
