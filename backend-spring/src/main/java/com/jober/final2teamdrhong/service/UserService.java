@@ -3,7 +3,7 @@ package com.jober.final2teamdrhong.service;
 import com.jober.final2teamdrhong.config.JwtConfig;
 import com.jober.final2teamdrhong.dto.UserLoginRequest;
 import com.jober.final2teamdrhong.dto.UserLoginResponse;
-import com.jober.final2teamdrhong.dto.UserSignupRequestDto;
+import com.jober.final2teamdrhong.dto.UserSignupRequest;
 import com.jober.final2teamdrhong.entity.User;
 import com.jober.final2teamdrhong.entity.UserAuth;
 import com.jober.final2teamdrhong.repository.UserRepository;
@@ -31,11 +31,12 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final RateLimitService rateLimitService;
     private final JwtConfig jwtConfig;
+    private final RefreshTokenService refreshTokenService;
 
     /**
      * Rate limiting과 함께 회원가입 처리
      */
-    public void signupWithRateLimit(UserSignupRequestDto requestDto, String clientIp) {
+    public void signupWithRateLimit(UserSignupRequest requestDto, String clientIp) {
         // Rate limiting 체크
         rateLimitService.checkSignupRateLimit(clientIp, requestDto.getEmail());
         
@@ -43,7 +44,7 @@ public class UserService {
         signup(requestDto);
     }
 
-    public void signup(UserSignupRequestDto requestDto) {
+    public void signup(UserSignupRequest requestDto) {
         log.info("회원가입 시작: email={}", requestDto.getEmail());
         
         // 1. 비즈니스 규칙 검증 (기본 유효성 검증은 @Valid에서 처리됨)
@@ -98,7 +99,7 @@ public class UserService {
         }
     }
     
-    private void validateBusinessRules(UserSignupRequestDto requestDto) {
+    private void validateBusinessRules(UserSignupRequest requestDto) {
         // 이메일 중복 확인 (비즈니스 규칙)
         if (userRepository.findByUserEmail(requestDto.getEmail()).isPresent()) {
             throw new DuplicateResourceException("이미 가입된 이메일입니다.");
@@ -143,37 +144,66 @@ public class UserService {
         return result == 0;
     }
 
-    public UserLoginResponse login(@Valid UserLoginRequest userLoginRequest) {
+    /**
+     * 로컬 계정 로그인 (Refresh Token 포함)
+     * 
+     * @param userLoginRequest 로그인 요청 정보
+     * @param clientIp 클라이언트 IP 주소
+     * @return JWT 토큰과 사용자 정보를 포함한 로그인 응답
+     * @throws BadCredentialsException 인증 실패 시 (이메일/비밀번호 불일치, LOCAL 계정 없음)
+     */
+    public UserLoginResponse loginWithRefreshToken(@Valid UserLoginRequest userLoginRequest, String clientIp) {
+        log.info("로그인 시도: email={}", LogMaskingUtil.maskEmail(userLoginRequest.getEmail()));
+        
         // 보안상 모든 인증 실패 상황에서 동일한 에러 메시지 사용
         final String INVALID_CREDENTIALS_MESSAGE = "이메일 또는 비밀번호가 일치하지 않습니다.";
         
-        // 1. 이메일 기반으로 User 조회
-        User user = userRepository.findByUserEmail(userLoginRequest.getEmail())
-                .orElseThrow(() -> new BadCredentialsException(INVALID_CREDENTIALS_MESSAGE));
-        
-        // 2. LOCAL 인증 방식 조회
-        UserAuth localAuth = user.getUserAuths().stream()
-                .filter(auth -> auth.getAuthType() == UserAuth.AuthType.LOCAL)
-                .findFirst()
-                .orElseThrow(() -> new BadCredentialsException(INVALID_CREDENTIALS_MESSAGE));
+        try {
+            // 1. 이메일 기반으로 User 조회
+            User user = userRepository.findByUserEmail(userLoginRequest.getEmail())
+                    .orElseThrow(() -> new BadCredentialsException(INVALID_CREDENTIALS_MESSAGE));
+            
+            // 2. LOCAL 인증 방식 조회
+            UserAuth localAuth = user.getUserAuths().stream()
+                    .filter(auth -> auth.getAuthType() == UserAuth.AuthType.LOCAL)
+                    .findFirst()
+                    .orElseThrow(() -> new BadCredentialsException(INVALID_CREDENTIALS_MESSAGE));
 
-        // 3. 비밀번호 검증 (타이밍 공격 방지를 위한 상수시간 비교)
-        if (!passwordEncoder.matches(userLoginRequest.getPassword(), localAuth.getPasswordHash())) {
+            // 3. 비밀번호 검증 (타이밍 공격 방지를 위한 상수시간 비교)
+            if (!passwordEncoder.matches(userLoginRequest.getPassword(), localAuth.getPasswordHash())) {
+                log.warn("로그인 실패 - 비밀번호 불일치: email={}", LogMaskingUtil.maskEmail(userLoginRequest.getEmail()));
+                throw new BadCredentialsException(INVALID_CREDENTIALS_MESSAGE);
+            }
+
+            // 4. 로그인 성공 처리: 마지막 로그인 시간 업데이트
+            localAuth.updateLastUsed();
+            userRepository.save(user);
+
+            // 5. Access Token과 Refresh Token 생성
+            String accessToken = jwtConfig.generateAccessToken(user.getUserEmail(), user.getUserId().longValue());
+            
+            // 6. Refresh Token 생성 및 저장
+            String refreshToken = refreshTokenService.createRefreshToken(user, clientIp);
+            
+            // 보안 강화: 민감한 정보 마스킹 후 로그인 성공 로깅
+            log.info("로그인 성공: userId={}, email={}, role={}", 
+                    LogMaskingUtil.maskUserId(user.getUserId().longValue()), 
+                    LogMaskingUtil.maskEmail(user.getUserEmail()),
+                    user.getUserRole().name());
+            
+            return UserLoginResponse.withRefreshToken(user, accessToken, refreshToken);
+            
+        } catch (BadCredentialsException e) {
+            // 인증 실패 시 로깅 (보안을 위해 실패 사유는 노출하지 않음)
+            log.warn("로그인 실패: email={}, reason=인증 정보 불일치", 
+                    LogMaskingUtil.maskEmail(userLoginRequest.getEmail()));
+            throw e;
+        } catch (Exception e) {
+            // 예상치 못한 오류 시 로깅
+            log.error("로그인 처리 중 오류 발생: email={}, error={}", 
+                    LogMaskingUtil.maskEmail(userLoginRequest.getEmail()), e.getMessage());
             throw new BadCredentialsException(INVALID_CREDENTIALS_MESSAGE);
         }
-
-        // 4. 로그인 성공 처리: 마지막 로그인 시간 업데이트
-        localAuth.updateLastUsed();
-
-        // 5. JWT 생성 및 응답 DTO 반환
-        String token = jwtConfig.generateToken(user.getUserEmail(), user.getUserId().longValue());
-        
-        // 보안 강화: 민감한 정보 마스킹
-        log.info("로그인 성공: userId={}, email={}, token={}", 
-                LogMaskingUtil.maskUserId(user.getUserId().longValue()), 
-                LogMaskingUtil.maskEmail(user.getUserEmail()),
-                LogMaskingUtil.maskToken(token));
-        
-        return UserLoginResponse.of(user, token);
     }
+
 }
