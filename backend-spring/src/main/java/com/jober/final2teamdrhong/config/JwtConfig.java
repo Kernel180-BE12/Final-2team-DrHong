@@ -87,7 +87,7 @@ public class JwtConfig {
      * JWT 토큰 생성
      */
     public String generateToken(String email, Long userId) {
-        long tokenValidityInMilliseconds = 1000 * 60 * 60 * 24; // 24시간
+        long tokenValidityInMilliseconds = 1000 * 60 * 60 * 2; // 2시간
         Date now = new Date();
         Date validity = new Date(now.getTime() + tokenValidityInMilliseconds);
         
