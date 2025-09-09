@@ -1,5 +1,7 @@
 package com.jober.final2teamdrhong.config;
 
+import com.jober.final2teamdrhong.service.BlacklistService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
@@ -17,10 +19,14 @@ import io.jsonwebtoken.security.SecurityException;
 
 import java.security.Key;
 import java.util.Date;
+import java.util.UUID;
 
 @Configuration
 @Slf4j
+@RequiredArgsConstructor
 public class JwtConfig {
+
+    private final BlacklistService blacklistService;
     
     @Value("${jwt.secret.key:}")
     private String jwtSecretKey;
@@ -83,22 +89,48 @@ public class JwtConfig {
         return Keys.hmacShaKeyFor(jwtSecretKey.getBytes());
     }
     
+    // 토큰 만료 시간 상수
+    private static final long ACCESS_TOKEN_VALIDITY = 1000 * 60 * 15; // 15분
+    private static final long REFRESH_TOKEN_VALIDITY = 1000 * 60 * 60 * 24 * 7; // 7일
+
     /**
-     * JWT 토큰 생성
+     * Access Token 생성 (API 호출용)
      */
-    public String generateToken(String email, Long userId) {
-        long tokenValidityInMilliseconds = 1000 * 60 * 60 * 2; // 2시간
+    public String generateAccessToken(String email, Long userId) {
         Date now = new Date();
-        Date validity = new Date(now.getTime() + tokenValidityInMilliseconds);
+        Date validity = new Date(now.getTime() + ACCESS_TOKEN_VALIDITY);
+        String jti = UUID.randomUUID().toString(); // JWT ID 생성
         
         return Jwts.builder()
+                .setId(jti) // JWT ID 설정
                 .setSubject(email)
                 .claim("userId", userId)
+                .claim("tokenType", "access")
                 .setIssuedAt(now)
                 .setExpiration(validity)
                 .signWith(getSigningKey(), SignatureAlgorithm.HS256)
                 .compact();
     }
+
+    /**
+     * Refresh Token 생성 (토큰 갱신용)
+     */
+    public String generateRefreshToken(String email, Long userId) {
+        Date now = new Date();
+        Date validity = new Date(now.getTime() + REFRESH_TOKEN_VALIDITY);
+        String jti = UUID.randomUUID().toString(); // JWT ID 생성
+        
+        return Jwts.builder()
+                .setId(jti) // JWT ID 설정
+                .setSubject(email)
+                .claim("userId", userId)
+                .claim("tokenType", "refresh")
+                .setIssuedAt(now)
+                .setExpiration(validity)
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
+                .compact();
+    }
+
     
     /**
      * JWT 토큰 검증
@@ -176,6 +208,16 @@ public class JwtConfig {
     }
     
     /**
+     * JWT 토큰에서 JTI(JWT ID) 추출
+     * @param token JWT 토큰 (Bearer 접두사 제거된 상태)
+     * @return JTI (추출 실패 시 null)
+     */
+    public String getJtiFromToken(String token) {
+        Claims claims = getClaimsFromToken(token);
+        return claims != null ? claims.getId() : null;
+    }
+    
+    /**
      * JWT 토큰 만료 시간 추출
      * @param token JWT 토큰 (Bearer 접두사 제거된 상태)
      * @return 만료 시간 (추출 실패 시 null)
@@ -195,6 +237,45 @@ public class JwtConfig {
         return expiration != null && expiration.before(new Date());
     }
     
+    /**
+     * JWT 토큰 타입 확인
+     * @param token JWT 토큰 (Bearer 접두사 제거된 상태)
+     * @return 토큰 타입 ("access", "refresh" 또는 null)
+     */
+    public String getTokenType(String token) {
+        Claims claims = getClaimsFromToken(token);
+        return claims != null ? (String) claims.get("tokenType") : null;
+    }
+
+    /**
+     * Access Token인지 확인
+     */
+    public boolean isAccessToken(String token) {
+        return "access".equals(getTokenType(token));
+    }
+
+    /**
+     * Refresh Token인지 확인
+     */
+    public boolean isRefreshToken(String token) {
+        return "refresh".equals(getTokenType(token));
+    }
+
+    /**
+     * JWT 토큰 해시 생성 (DB 저장용)
+     * @param token 원본 토큰
+     * @return SHA-256 해시값
+     */
+    public String generateTokenHash(String token) {
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(token.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.Base64.getEncoder().encodeToString(hash);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 algorithm not available", e);
+        }
+    }
+
     /**
      * Authorization 헤더에서 Bearer 토큰 추출
      * @param authorizationHeader Authorization 헤더 값
