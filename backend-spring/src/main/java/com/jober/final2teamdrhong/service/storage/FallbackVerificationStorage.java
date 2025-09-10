@@ -3,6 +3,7 @@ package com.jober.final2teamdrhong.service.storage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Primary;
+import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Component;
 
@@ -15,6 +16,7 @@ import java.util.Optional;
 @Slf4j
 @Component
 @Primary // Spring이 VerificationStorage를 주입할 때, 이 구현체를 최우선으로 사용하도록 지정
+@Profile("!redis-fallback-test") // Redis 폴백 테스트가 아닐 때만 활성화
 public class FallbackVerificationStorage implements VerificationStorage {
 
     private final VerificationStorage primaryStorage;   // Plan A: Redis

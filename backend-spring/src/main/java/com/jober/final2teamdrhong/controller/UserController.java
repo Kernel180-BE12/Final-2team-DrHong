@@ -5,6 +5,7 @@ import com.jober.final2teamdrhong.dto.UserLoginRequest;
 import com.jober.final2teamdrhong.dto.UserLoginResponse;
 import com.jober.final2teamdrhong.dto.UserSignupRequest;
 import com.jober.final2teamdrhong.dto.UserSignupResponse;
+import com.jober.final2teamdrhong.dto.UserLogoutResponse;
 import com.jober.final2teamdrhong.service.EmailService;
 import com.jober.final2teamdrhong.service.RateLimitService;
 import com.jober.final2teamdrhong.service.RefreshTokenService;
@@ -131,8 +132,8 @@ public class UserController {
         
         String clientIp = ClientIpUtil.getClientIpAddress(request, isDevelopment);
         
-        // Rate limiting 체크
-        rateLimitService.checkLoginRateLimit(clientIp);
+        // 향상된 Rate limiting 체크 (IP + 이메일 기반)
+        rateLimitService.checkEnhancedLoginRateLimit(clientIp, userLoginRequest.getEmail());
         
         UserLoginResponse response = userService.loginWithRefreshToken(userLoginRequest, clientIp);
         
@@ -141,9 +142,9 @@ public class UserController {
                 LogMaskingUtil.maskIpAddress(clientIp), 
                 LogMaskingUtil.maskEmail(userLoginRequest.getEmail()));
         
-        return ResponseEntity.ok()
-                .header("Authorization", "Bearer " + response.getToken())
-                .body(response);
+        // 보안 개선: Authorization 헤더에는 토큰을 포함하지 않고, 응답 바디에만 포함
+        // 클라이언트는 응답 바디에서 토큰을 추출하여 이후 요청의 헤더에 포함해야 함
+        return ResponseEntity.ok().body(response);
     }
 
     @Operation(summary = "토큰 갱신", description = "만료된 Access Token을 Refresh Token으로 갱신합니다.")
@@ -165,6 +166,9 @@ public class UserController {
         
         String clientIp = ClientIpUtil.getClientIpAddress(request, isDevelopment);
         
+        // Rate limiting 체크 (토큰 갱신 남용 방지)
+        rateLimitService.checkRefreshTokenRateLimit(clientIp);
+        
         // Authorization 헤더에서 토큰 추출
         String refreshToken = jwtConfig.extractTokenFromHeader(authorizationHeader);
         
@@ -182,30 +186,28 @@ public class UserController {
         // 보안 강화: 민감한 정보 마스킹 후 로깅
         log.info("토큰 갱신 API 완료: ip={}", LogMaskingUtil.maskIpAddress(clientIp));
         
-        // 새로운 토큰 쌍 응답
+        // 새로운 토큰 쌍 응답 (보안 개선: 응답 바디에만 토큰 포함)
         Map<String, Object> response = Map.of(
             "accessToken", tokenPair.getAccessToken(),
             "refreshToken", tokenPair.getRefreshToken(),
             "tokenType", "Bearer",
-            "expiresIn", 900 // 15분 (초 단위)
+            "expiresIn", jwtConfig.getAccessTokenValiditySeconds()
         );
         
-        return ResponseEntity.ok()
-                .header("Authorization", "Bearer " + tokenPair.getAccessToken())
-                .body(response);
+        return ResponseEntity.ok().body(response);
     }
 
     @Operation(summary = "로그아웃", description = "현재 세션을 종료하고 모든 토큰을 무효화합니다.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "로그아웃 성공",
                     content = @Content(mediaType = "application/json",
-                    schema = @Schema(implementation = UserLoginResponse.class))),
+                    schema = @Schema(implementation = UserLogoutResponse.class))),
             @ApiResponse(responseCode = "400", description = "잘못된 요청",
                     content = @Content(mediaType = "application/json",
-                    schema = @Schema(implementation = UserLoginResponse.class)))
+                    schema = @Schema(implementation = UserLogoutResponse.class)))
     })
     @PostMapping("/logout")  
-    public ResponseEntity<UserLoginResponse> logout(
+    public ResponseEntity<UserLogoutResponse> logout(
             @Parameter(description = "Authorization 헤더 (Bearer + Access Token)")
             @RequestHeader(value = "Authorization", required = false) String authorizationHeader,
             @Parameter(description = "로그아웃 요청 (Refresh Token 포함)")
@@ -241,7 +243,7 @@ public class UserController {
         log.info("로그아웃 완료: ip={}", LogMaskingUtil.maskIpAddress(clientIp));
         
         return ResponseEntity.ok(
-            UserLoginResponse.success("로그아웃이 완료되었습니다.")
+            UserLogoutResponse.success("로그아웃이 완료되었습니다.")
         );
     }
 }

@@ -3,6 +3,7 @@ package com.jober.final2teamdrhong.service.storage;
 import com.jober.final2teamdrhong.entity.EmailVerification;
 import com.jober.final2teamdrhong.repository.EmailVerificationRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
