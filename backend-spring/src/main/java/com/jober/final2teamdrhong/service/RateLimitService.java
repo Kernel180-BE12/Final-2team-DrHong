@@ -24,7 +24,8 @@ import java.util.function.Supplier;
  * - 이메일 발송: IP당 5분간 3회
  * - 이메일 인증: 이메일당 10분간 5회  
  * - 회원가입: IP당 1시간간 10회
- * - 로그인: IP당 15분간 5회
+ * - 로그인: IP당 15분간 5회 + 이메일당 15분간 3회 (이중 체크)
+ * - 토큰 갱신: IP당 5분간 10회
  * 
  * Redis 사용 가능시 분산 환경 지원, 불가능시 인메모리 폴백 사용
  */
@@ -74,6 +75,24 @@ public class RateLimitService {
         return bucket.tryConsume(1);
     }
     
+    /**
+     * 이메일별 로그인 시도 허용 여부 체크
+     */
+    public boolean isLoginByEmailAllowed(String email) {
+        String key = "login_email:" + email;
+        Bucket bucket = getBucket(key, () -> createLoginByEmailBucketConfig());
+        return bucket.tryConsume(1);
+    }
+    
+    /**
+     * 토큰 갱신 허용 여부 체크
+     */
+    public boolean isRefreshTokenAllowed(String ipAddress) {
+        String key = "refresh_token:" + ipAddress;
+        Bucket bucket = getBucket(key, () -> createRefreshTokenBucketConfig());
+        return bucket.tryConsume(1);
+    }
+    
     // =========================================
     // 대기 시간 계산 메서드들 (Wait Time Methods)  
     // =========================================
@@ -99,6 +118,24 @@ public class RateLimitService {
     public long getLoginWaitTime(String ipAddress) {
         String key = "login:" + ipAddress;
         Bucket bucket = getBucket(key, () -> createLoginBucketConfig());
+        return bucket.estimateAbilityToConsume(1).getNanosToWaitForRefill() / 1_000_000_000;
+    }
+    
+    /**
+     * 이메일별 로그인 대기 시간 계산
+     */
+    public long getLoginByEmailWaitTime(String email) {
+        String key = "login_email:" + email;
+        Bucket bucket = getBucket(key, () -> createLoginByEmailBucketConfig());
+        return bucket.estimateAbilityToConsume(1).getNanosToWaitForRefill() / 1_000_000_000;
+    }
+    
+    /**
+     * 토큰 갱신 대기 시간 계산
+     */
+    public long getRefreshTokenWaitTime(String ipAddress) {
+        String key = "refresh_token:" + ipAddress;
+        Bucket bucket = getBucket(key, () -> createRefreshTokenBucketConfig());
         return bucket.estimateAbilityToConsume(1).getNanosToWaitForRefill() / 1_000_000_000;
     }
     
@@ -138,6 +175,32 @@ public class RateLimitService {
                 .addLimit(Bandwidth.simple(
                         rateLimitConfig.getLogin().getRequestsPerWindow(),
                         Duration.ofMinutes(rateLimitConfig.getLogin().getWindowDurationMinutes())
+                ))
+                .build();
+    }
+    
+    /**
+     * 이메일별 로그인 버킷 설정 (더 엄격한 제한)
+     * 동일 계정에 대한 무차별 대입 공격 방지
+     */
+    private BucketConfiguration createLoginByEmailBucketConfig() {
+        return BucketConfiguration.builder()
+                .addLimit(Bandwidth.simple(
+                        3, // 이메일별로는 더 엄격하게 3회로 제한
+                        Duration.ofMinutes(rateLimitConfig.getLogin().getWindowDurationMinutes())
+                ))
+                .build();
+    }
+    
+    /**
+     * 토큰 갱신 버킷 설정
+     * 토큰 갱신 남용 방지
+     */
+    private BucketConfiguration createRefreshTokenBucketConfig() {
+        return BucketConfiguration.builder()
+                .addLimit(Bandwidth.simple(
+                        rateLimitConfig.getRefreshToken().getRequestsPerWindow(),
+                        Duration.ofMinutes(rateLimitConfig.getRefreshToken().getWindowDurationMinutes())
                 ))
                 .build();
     }
@@ -220,7 +283,7 @@ public class RateLimitService {
 
     
     /**
-     * 로그인 Rate Limiting 체크
+     * 로그인 Rate Limiting 체크 (IP 기반만)
      */
     public void checkLoginRateLimit(String clientIp) {
         if (!isLoginAllowed(clientIp)) {
@@ -228,6 +291,49 @@ public class RateLimitService {
             log.warn("로그인 시도 속도 제한 초과: ip={}, waitTime={}초", clientIp, waitTime);
             throw new RateLimitExceededException(
                 "로그인 시도 속도 제한을 초과했습니다. " + waitTime + "초 후 다시 시도해주세요.", 
+                waitTime
+            );
+        }
+    }
+    
+    /**
+     * 향상된 로그인 Rate Limiting 체크 (IP + 이메일 기반)
+     * 무차별 대입 공격과 계정별 공격을 모두 방지
+     */
+    public void checkEnhancedLoginRateLimit(String clientIp, String email) {
+        // 1. IP 기반 체크
+        if (!isLoginAllowed(clientIp)) {
+            long waitTime = getLoginWaitTime(clientIp);
+            log.warn("로그인 시도 속도 제한 초과 (IP): ip={}, email={}, waitTime={}초", 
+                    clientIp, email, waitTime);
+            throw new RateLimitExceededException(
+                "로그인 시도 속도 제한을 초과했습니다. " + waitTime + "초 후 다시 시도해주세요.", 
+                waitTime
+            );
+        }
+        
+        // 2. 이메일 기반 체크 (더 엄격한 제한)
+        if (!isLoginByEmailAllowed(email)) {
+            long waitTime = getLoginByEmailWaitTime(email);
+            log.warn("로그인 시도 속도 제한 초과 (이메일): ip={}, email={}, waitTime={}초", 
+                    clientIp, email, waitTime);
+            throw new RateLimitExceededException(
+                "해당 계정에 대한 로그인 시도가 너무 많습니다. " + waitTime + "초 후 다시 시도해주세요.", 
+                waitTime
+            );
+        }
+    }
+
+    /**
+     * 토큰 갱신 Rate Limiting 체크
+     * 토큰 갱신 남용 방지
+     */
+    public void checkRefreshTokenRateLimit(String clientIp) {
+        if (!isRefreshTokenAllowed(clientIp)) {
+            long waitTime = getRefreshTokenWaitTime(clientIp);
+            log.warn("토큰 갱신 속도 제한 초과: ip={}, waitTime={}초", clientIp, waitTime);
+            throw new RateLimitExceededException(
+                "토큰 갱신 속도 제한을 초과했습니다. " + waitTime + "초 후 다시 시도해주세요.", 
                 waitTime
             );
         }

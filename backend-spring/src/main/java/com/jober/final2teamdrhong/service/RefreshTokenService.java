@@ -5,6 +5,7 @@ import com.jober.final2teamdrhong.entity.User;
 import com.jober.final2teamdrhong.exception.AuthenticationException;
 import com.jober.final2teamdrhong.repository.UserRepository;
 import com.jober.final2teamdrhong.util.LogMaskingUtil;
+import com.jober.final2teamdrhong.constant.AuthConstants;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -28,18 +29,12 @@ import java.util.Set;
 @Slf4j
 public class RefreshTokenService {
 
-
     private final UserRepository userRepository;
     private final JwtConfig jwtConfig;
     private final RateLimitService rateLimitService;
     private final RedisTemplate<String,String> redisTemplate;
 
-    // Redis 키 패턴
-    private static final String REFRESH_TOKEN_KEY_PREFIX = "refresh_token:";
-    private static final String USER_TOKENS_KEY_PREFIX = "user_tokens:";
-
-    // 설정 상수
-    private static final long REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60; //7dlf
+    // Redis 키 패턴 및 설정 상수는 AuthConstants에서 가져옴
     /**
      * 사용자용 Refresh Token 생성 및 저장 (Redis)
      * 기존 토큰이 있으면 새로 교체 (단일 세션 정책)
@@ -53,12 +48,11 @@ public class RefreshTokenService {
         revokeAllUserTokens(user.getUserId().longValue());
 
         // 2. 새로운 Refresh Token 생성
-        String refreshToken = jwtConfig.generateRefreshToken(user.getUserEmail(), user.getUserId().longValue());
+        String refreshToken = jwtConfig.generateRefreshToken(user.getUserEmail(), user.getUserId());
         String tokenHash = jwtConfig.generateTokenHash(refreshToken);
 
         // 3. Redis에 저장
-        saveRefreshTokenToRedis(tokenHash,user.getUserId().longValue(),REFRESH_TOKEN_TTL_SECONDS);
-
+        saveRefreshTokenToRedis(tokenHash,user.getUserId().longValue(),AuthConstants.REFRESH_TOKEN_TTL_SECONDS);
 
         log.info("Refresh Token 생성 완료: tokenId={}, userId={}",
                 LogMaskingUtil.maskUserId(user.getUserId().longValue()));
@@ -79,27 +73,27 @@ public class RefreshTokenService {
         // 2. Refresh Token 검증
         if (!jwtConfig.validateToken(refreshToken) || !jwtConfig.isRefreshToken(refreshToken)) {
             log.warn("유효하지 않은 Refresh Token: ip={}", LogMaskingUtil.maskIpAddress(clientIp));
-            throw new AuthenticationException("유효하지 않은 리프레시 토큰입니다.");
+            throw new AuthenticationException(AuthConstants.INVALID_REFRESH_TOKEN);
         }
 
         // 3. 토큰에서 사용자 정보 추출
         String email = jwtConfig.getEmailFromToken(refreshToken);
-        Long userId = jwtConfig.getUserIdFromToken(refreshToken);
+        Integer userId = getUserIdFromTokenAsInteger(refreshToken);
         
         if (email == null || userId == null) {
             log.warn("토큰에서 사용자 정보 추출 실패: ip={}", LogMaskingUtil.maskIpAddress(clientIp));
-            throw new AuthenticationException("토큰 정보가 유효하지 않습니다.");
+            throw new AuthenticationException(AuthConstants.INVALID_TOKEN_INFO);
         }
 
         // 4. Redis에서 토큰 검증
         String tokenHash = jwtConfig.generateTokenHash(refreshToken);
         if (!isValidRefreshTokenInRedis(tokenHash)) {
             log.warn("유효하지 않은 Refresh Token: userId={}", userId);
-            throw new AuthenticationException("만료되었거나 유효하지 않은 리프레시 토큰입니다.");
+            throw new AuthenticationException(AuthConstants.EXPIRED_REFRESH_TOKEN);
         }
         // 5. DB에서 사용자 조회
         User user = userRepository.findByUserEmail(email)
-                .orElseThrow(() -> new AuthenticationException("사용자를 찾을 수 없습니다."));
+                .orElseThrow(() -> new AuthenticationException(AuthConstants.USER_NOT_FOUND));
 
         // 6. 새로운 토큰 쌍 생성
         String newAccessToken = jwtConfig.generateAccessToken(email, userId);
@@ -108,9 +102,9 @@ public class RefreshTokenService {
 
         // 7. 기존 토큰 무효화 및 새 토큰 저장 (Token Rotation)
         revokeRefreshToken(refreshToken);
-        saveRefreshTokenToRedis(newTokenHash, userId, REFRESH_TOKEN_TTL_SECONDS);
+        saveRefreshTokenToRedis(newTokenHash, userId.longValue(), AuthConstants.REFRESH_TOKEN_TTL_SECONDS);
 
-        log.info("토큰 갱신 완료: userId={}", LogMaskingUtil.maskUserId(userId));
+        log.info("토큰 갱신 완료: userId={}", LogMaskingUtil.maskUserId(userId.longValue()));
 
         return new TokenPair(newAccessToken, newRefreshToken);
     }
@@ -123,17 +117,17 @@ public class RefreshTokenService {
      */
     private void saveRefreshTokenToRedis(String tokenHash, Long userId, long ttlSeconds) {
         try{
-            String tokenKey = REFRESH_TOKEN_KEY_PREFIX + tokenHash;
-            String userKey = USER_TOKENS_KEY_PREFIX +":" + tokenHash;
+            String tokenKey = AuthConstants.REFRESH_TOKEN_KEY_PREFIX + tokenHash;
+            String userTokensSetKey = AuthConstants.USER_TOKENS_KEY_PREFIX + userId; // 사용자별 토큰 목록을 위한 키
 
             // 토큰 해시 -> 사용자 ID 매핑 저장
-            redisTemplate.opsForValue().set(tokenKey,userId.toString(), Duration.ofSeconds(ttlSeconds));
+            redisTemplate.opsForValue().set(tokenKey, userId.toString(), Duration.ofSeconds(ttlSeconds));
 
             // 사용자 별 토큰 목록에 추가 (정리용)
-            redisTemplate.opsForSet().add(userKey, tokenHash);
-            redisTemplate.expire(userKey, Duration.ofSeconds(ttlSeconds));
+            redisTemplate.opsForSet().add(userTokensSetKey, tokenHash);
+            redisTemplate.expire(userTokensSetKey, Duration.ofSeconds(ttlSeconds));
 
-            log.debug("Refresh Token이 Redis에 저장되었습니다. userId = {}, TTL = {} 초", userId, ttlSeconds);
+            log.info("Refresh Token 저장 완료: userId={}, TTL={}초", LogMaskingUtil.maskUserId(userId), ttlSeconds);
         }catch (Exception e){
             log.error("Redis Refresh Token 저장 실패 : {}", e.getMessage());
             throw new RuntimeException("Failed to save Refresh Token",e);
@@ -146,7 +140,7 @@ public class RefreshTokenService {
      */
     private boolean isValidRefreshTokenInRedis(String tokenHash) {
         try {
-            String tokenKey = REFRESH_TOKEN_KEY_PREFIX + tokenHash;
+            String tokenKey = AuthConstants.REFRESH_TOKEN_KEY_PREFIX + tokenHash;
             Boolean exists = redisTemplate.hasKey(tokenKey);
             return exists != null && exists;
         } catch (Exception e) {
@@ -166,17 +160,17 @@ public class RefreshTokenService {
         String tokenHash = jwtConfig.generateTokenHash(refreshToken);
 
         try {
-            String tokenKey = REFRESH_TOKEN_KEY_PREFIX + tokenHash;
+            String tokenKey = AuthConstants.REFRESH_TOKEN_KEY_PREFIX + tokenHash;
             String userIdStr = redisTemplate.opsForValue().get(tokenKey);
 
             if (userIdStr != null) {
                 Long userId = Long.valueOf(userIdStr);
-                String userKey = USER_TOKENS_KEY_PREFIX + userId + ":" + tokenHash;
+                String userTokensSetKey = AuthConstants.USER_TOKENS_KEY_PREFIX + userId;
 
                 // 토큰 삭제
                 redisTemplate.delete(tokenKey);
                 // 사용자별 토큰 목록에서도 삭제
-                redisTemplate.opsForSet().remove(userKey, tokenHash);
+                redisTemplate.opsForSet().remove(userTokensSetKey, tokenHash);
 
                 log.info("Refresh Token 무효화 완료: userId={}", userId);
             }
@@ -190,21 +184,15 @@ public class RefreshTokenService {
      */
     public void revokeAllUserTokens(Long userId) {
         try {
-            String userPattern = USER_TOKENS_KEY_PREFIX + userId + ":*";
-            Set<String> userKeys = redisTemplate.keys(userPattern);
+            String userTokensSetKey = AuthConstants.USER_TOKENS_KEY_PREFIX + userId;
+            Set<String> tokenHashes = redisTemplate.opsForSet().members(userTokensSetKey);
 
-            if (userKeys != null && !userKeys.isEmpty()) {
-                // 사용자별 토큰 목록에서 모든 토큰 해시 조회
-                for (String userKey : userKeys) {
-                    Set<String> tokenHashes = redisTemplate.opsForSet().members(userKey);
-                    if (tokenHashes != null) {
-                        for (String tokenHash : tokenHashes) {
-                            String tokenKey = REFRESH_TOKEN_KEY_PREFIX + tokenHash;
-                            redisTemplate.delete(tokenKey);
-                        }
-                    }
-                    redisTemplate.delete(userKey);
+            if (tokenHashes != null && !tokenHashes.isEmpty()) {
+                for (String tokenHash : tokenHashes) {
+                    String tokenKey = AuthConstants.REFRESH_TOKEN_KEY_PREFIX + tokenHash;
+                    redisTemplate.delete(tokenKey);
                 }
+                redisTemplate.delete(userTokensSetKey); // 사용자 토큰 세트 자체 삭제
             }
 
             log.info("사용자 {}의 모든 Refresh Token이 무효화되었습니다.", userId);
@@ -239,5 +227,13 @@ public class RefreshTokenService {
 
         public String getAccessToken() { return accessToken; }
         public String getRefreshToken() { return refreshToken; }
+    }
+    
+    /**
+     * JWT 토큰에서 사용자 ID를 Integer로 추출하는 helper 메서드
+     */
+    private Integer getUserIdFromTokenAsInteger(String token) {
+        Long userId = jwtConfig.getUserIdFromToken(token);
+        return userId != null ? userId.intValue() : null;
     }
 }

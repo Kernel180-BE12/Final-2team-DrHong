@@ -1,5 +1,6 @@
 package com.jober.final2teamdrhong.service.storage;
 
+import org.springframework.context.annotation.Profile;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -11,6 +12,7 @@ import java.util.Optional;
  * 빠른 속도와 TTL(만료 시간) 자동 처리 기능이 장점입니다.
  */
 @Component("redisStorage") // 이 구현체의 이름을 "redisStorage"로 지정
+@Profile("!redis-fallback-test") // Redis 폴백 테스트가 아닐 때만 활성화
 public class RedisVerificationStorage implements VerificationStorage {
 
     private final StringRedisTemplate redisTemplate;
