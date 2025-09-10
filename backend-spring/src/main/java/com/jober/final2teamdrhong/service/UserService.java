@@ -9,19 +9,19 @@ import com.jober.final2teamdrhong.entity.UserAuth;
 import com.jober.final2teamdrhong.repository.UserRepository;
 import com.jober.final2teamdrhong.service.storage.VerificationStorage;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import com.jober.final2teamdrhong.exception.AuthenticationException;
 import com.jober.final2teamdrhong.exception.DuplicateResourceException;
 import com.jober.final2teamdrhong.exception.BusinessException;
 import com.jober.final2teamdrhong.util.LogMaskingUtil;
+import com.jober.final2teamdrhong.constant.AuthConstants;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-@RequiredArgsConstructor
 @Transactional
 @Slf4j
 public class UserService {
@@ -32,6 +32,15 @@ public class UserService {
     private final RateLimitService rateLimitService;
     private final JwtConfig jwtConfig;
     private final RefreshTokenService refreshTokenService;
+
+    public UserService(VerificationStorage verificationStorage, UserRepository userRepository, PasswordEncoder passwordEncoder, RateLimitService rateLimitService, JwtConfig jwtConfig, RefreshTokenService refreshTokenService) {
+        this.verificationStorage = verificationStorage;
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.rateLimitService = rateLimitService;
+        this.jwtConfig = jwtConfig;
+        this.refreshTokenService = refreshTokenService;
+    }
 
     /**
      * Rate limiting과 함께 회원가입 처리
@@ -44,6 +53,7 @@ public class UserService {
         signup(requestDto);
     }
 
+    @CacheEvict(value = "userEmailCheck", key = "#requestDto.email")
     public void signup(UserSignupRequest requestDto) {
         log.info("회원가입 시작: email={}", requestDto.getEmail());
         
@@ -146,65 +156,140 @@ public class UserService {
     }
 
     /**
+     * 타이밍 공격 방지를 위한 최소 응답 시간 보장
+     * @param minimumMs 최소 대기 시간 (밀리초)
+     */
+    private void ensureMinimumResponseTime(long minimumMs) {
+        try {
+            long currentTime = System.currentTimeMillis();
+            // 요청 시작 시간을 현재 스레드에 저장된 값에서 가져오거나, 현재 시간 사용
+            long startTime = getCurrentRequestStartTime();
+            long elapsed = currentTime - startTime;
+            
+            if (elapsed < minimumMs) {
+                long sleepTime = minimumMs - elapsed;
+                log.debug("보안 지연 적용: {}ms 대기", sleepTime);
+                Thread.sleep(sleepTime);
+            }
+        } catch (InterruptedException e) {
+            // 인터럽트 상태 복원
+            Thread.currentThread().interrupt();
+            log.warn("응답 시간 지연 중 인터럽트 발생");
+        }
+    }
+    
+    /**
+     * 현재 요청의 시작 시간을 반환 (없으면 현재 시간 - 100ms)
+     */
+    private long getCurrentRequestStartTime() {
+        // 실제로는 요청 시작 시간을 ThreadLocal에 저장하거나 
+        // Spring의 RequestAttributes를 사용할 수 있지만,
+        // 단순화를 위해 현재 시간에서 100ms를 뺀 값을 사용
+        return System.currentTimeMillis() - 100;
+    }
+
+    /**
      * 로컬 계정 로그인 (Refresh Token 포함)
-     * 
-     * @param userLoginRequest 로그인 요청 정보
-     * @param clientIp 클라이언트 IP 주소
-     * @return JWT 토큰과 사용자 정보를 포함한 로그인 응답
-     * @throws BadCredentialsException 인증 실패 시 (이메일/비밀번호 불일치, LOCAL 계정 없음)
      */
     public UserLoginResponse loginWithRefreshToken(@Valid UserLoginRequest userLoginRequest, String clientIp) {
         log.info("로그인 시도: email={}", LogMaskingUtil.maskEmail(userLoginRequest.getEmail()));
         
-        // 보안상 모든 인증 실패 상황에서 동일한 에러 메시지 사용
-        final String INVALID_CREDENTIALS_MESSAGE = "이메일 또는 비밀번호가 일치하지 않습니다.";
-        
         try {
-            // 1. 이메일 기반으로 User 조회
-            User user = userRepository.findByUserEmail(userLoginRequest.getEmail())
-                    .orElseThrow(() -> new BadCredentialsException(INVALID_CREDENTIALS_MESSAGE));
-            
-            // 2. LOCAL 인증 방식 조회
-            UserAuth localAuth = user.getUserAuths().stream()
-                    .filter(auth -> auth.getAuthType() == UserAuth.AuthType.LOCAL)
-                    .findFirst()
-                    .orElseThrow(() -> new BadCredentialsException(INVALID_CREDENTIALS_MESSAGE));
-
-            // 3. 비밀번호 검증 (타이밍 공격 방지를 위한 상수시간 비교)
-            if (!passwordEncoder.matches(userLoginRequest.getPassword(), localAuth.getPasswordHash())) {
-                log.warn("로그인 실패 - 비밀번호 불일치: email={}", LogMaskingUtil.maskEmail(userLoginRequest.getEmail()));
-                throw new BadCredentialsException(INVALID_CREDENTIALS_MESSAGE);
+            AuthenticationResult authResult = authenticateUser(userLoginRequest);
+            if (authResult.isFailure()) {
+                handleAuthenticationFailure(userLoginRequest.getEmail());
             }
-
-            // 4. 로그인 성공 처리: 마지막 로그인 시간 업데이트
-            localAuth.updateLastUsed();
-            userRepository.save(user);
-
-            // 5. Access Token과 Refresh Token 생성
-            String accessToken = jwtConfig.generateAccessToken(user.getUserEmail(), user.getUserId().longValue());
-            
-            // 6. Refresh Token 생성 및 저장
-            String refreshToken = refreshTokenService.createRefreshToken(user, clientIp);
-            
-            // 보안 강화: 민감한 정보 마스킹 후 로그인 성공 로깅
-            log.info("로그인 성공: userId={}, email={}, role={}", 
-                    LogMaskingUtil.maskUserId(user.getUserId().longValue()), 
-                    LogMaskingUtil.maskEmail(user.getUserEmail()),
-                    user.getUserRole().name());
-            
-            return UserLoginResponse.withRefreshToken(user, accessToken, refreshToken);
+            return createSuccessfulLoginResponse(authResult.getUser(), authResult.getLocalAuth(), clientIp);
             
         } catch (BadCredentialsException e) {
-            // 인증 실패 시 로깅 (보안을 위해 실패 사유는 노출하지 않음)
-            log.warn("로그인 실패: email={}, reason=인증 정보 불일치", 
-                    LogMaskingUtil.maskEmail(userLoginRequest.getEmail()));
+            handleAuthenticationFailure(userLoginRequest.getEmail());
             throw e;
         } catch (Exception e) {
-            // 예상치 못한 오류 시 로깅
-            log.error("로그인 처리 중 오류 발생: email={}, error={}", 
-                    LogMaskingUtil.maskEmail(userLoginRequest.getEmail()), e.getMessage());
-            throw new BadCredentialsException(INVALID_CREDENTIALS_MESSAGE);
+            handleUnexpectedError(userLoginRequest.getEmail(), e);
+            return null; // 실제로는 예외가 던져지므로 도달하지 않음
         }
     }
-
+    
+    /**
+     * 사용자 인증 수행
+     */
+    private AuthenticationResult authenticateUser(UserLoginRequest request) {
+        String targetHash = AuthConstants.DUMMY_HASH;
+        User user = userRepository.findByUserEmailWithAuth(request.getEmail()).orElse(null);
+        UserAuth localAuth = null;
+        
+        if (user != null) {
+            localAuth = user.getUserAuths().stream()
+                    .filter(auth -> auth.getAuthType() == UserAuth.AuthType.LOCAL)
+                    .findFirst()
+                    .orElse(null);
+                    
+            if (localAuth != null) {
+                targetHash = localAuth.getPasswordHash();
+            }
+        }
+        
+        boolean passwordMatches = passwordEncoder.matches(request.getPassword(), targetHash);
+        return new AuthenticationResult(user, localAuth, passwordMatches);
+    }
+    
+    /**
+     * 인증 실패 처리
+     */
+    private void handleAuthenticationFailure(String email) {
+        ensureMinimumResponseTime(AuthConstants.MIN_RESPONSE_TIME_MS);
+        log.warn("로그인 실패: email={}, reason=인증 정보 불일치", LogMaskingUtil.maskEmail(email));
+        throw new BadCredentialsException(AuthConstants.INVALID_CREDENTIALS);
+    }
+    
+    /**
+     * 예상치 못한 오류 처리
+     */
+    private void handleUnexpectedError(String email, Exception e) {
+        ensureMinimumResponseTime(AuthConstants.MIN_RESPONSE_TIME_MS);
+        log.error("로그인 처리 중 오류 발생: email={}, error={}", 
+                LogMaskingUtil.maskEmail(email), e.getMessage());
+        throw new BadCredentialsException(AuthConstants.INVALID_CREDENTIALS);
+    }
+    
+    /**
+     * 성공적인 로그인 응답 생성
+     */
+    private UserLoginResponse createSuccessfulLoginResponse(User user, UserAuth localAuth, String clientIp) {
+        localAuth.updateLastUsed();
+        userRepository.save(user);
+        
+        String accessToken = jwtConfig.generateAccessToken(user.getUserEmail(), user.getUserId());
+        String refreshToken = refreshTokenService.createRefreshToken(user, clientIp);
+        
+        log.info("로그인 성공: userId={}, email={}, role={}", 
+                LogMaskingUtil.maskUserId(user.getUserId().longValue()), 
+                LogMaskingUtil.maskEmail(user.getUserEmail()),
+                user.getUserRole().name());
+        
+        return UserLoginResponse.withRefreshToken(user, accessToken, refreshToken);
+    }
+    
+    /**
+     * 인증 결과를 담는 내부 클래스
+     */
+    private static class AuthenticationResult {
+        private final User user;
+        private final UserAuth localAuth;
+        private final boolean passwordMatches;
+        
+        public AuthenticationResult(User user, UserAuth localAuth, boolean passwordMatches) {
+            this.user = user;
+            this.localAuth = localAuth;
+            this.passwordMatches = passwordMatches;
+        }
+        
+        public boolean isFailure() {
+            return user == null || localAuth == null || !passwordMatches;
+        }
+        
+        public User getUser() { return user; }
+        public UserAuth getLocalAuth() { return localAuth; }
+    }
+    
 }
