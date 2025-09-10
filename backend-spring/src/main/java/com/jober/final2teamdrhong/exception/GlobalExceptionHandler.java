@@ -191,13 +191,29 @@ public class GlobalExceptionHandler {
 
     // 4. 위에서 처리하지 못한 모든 나머지 예외를 처리하는 최후의 보루
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleException(Exception ex, HttpServletRequest request) {
-        // 보안을 위해 상세한 예외 정보는 로그에만 기록하고, 클라이언트에는 일반적인 메시지만 반환
-        log.error("Unexpected error occurred at {}: {}", request.getRequestURI(), ex.getClass().getSimpleName());
-        log.debug("Exception details", ex); // 디버그 레벨로 스택트레이스 로깅
+    public ResponseEntity<?> handleException(Exception ex, HttpServletRequest request) {
+        // 에러 추적용 고유 ID 생성
+        String errorId = String.valueOf(System.currentTimeMillis());
         
-        ErrorResponse response = new ErrorResponse("서버 내부 오류가 발생했습니다. 관리자에게 문의해주세요.");
-
+        // 보안을 위해 상세한 예외 정보는 로그에만 기록하고, 클라이언트에는 일반적인 메시지만 반환
+        log.error("Unexpected error [{}] occurred at {}: {}", errorId, request.getRequestURI(), ex.getClass().getSimpleName());
+        log.debug("Exception details [{}]", errorId, ex); // 디버그 레벨로 스택트레이스 로깅
+        
+        String errorMessage = "서버 내부 오류가 발생했습니다. 관리자에게 문의해주세요. (에러 ID: " + errorId + ")";
+        
+        // Auth API인지 확인하여 적절한 응답 타입 반환
+        if (isAuthApi(request)) {
+            if (request.getRequestURI().contains("/login")) {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                    UserLoginResponse.error(errorMessage)
+                );
+            }
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
+                UserSignupResponse.failure(errorMessage)
+            );
+        }
+        
+        ErrorResponse response = new ErrorResponse(errorMessage);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
     }
     

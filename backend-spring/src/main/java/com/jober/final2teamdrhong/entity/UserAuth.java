@@ -8,10 +8,16 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "users_auth", uniqueConstraints = {
+@Table(name = "users_auth", 
+    uniqueConstraints = {
         @UniqueConstraint(name = "uk_type_social_id",
-                columnNames = {"auth_type","social_id"}) //social_id는 특정 authType내에서 고유해야함
-})
+                columnNames = {"auth_type","social_id"})
+    },
+    indexes = {
+        @Index(name = "idx_user_auth_user_id", columnList = "users_id"),
+        @Index(name = "idx_user_auth_type", columnList = "auth_type"),
+        @Index(name = "idx_user_auth_last_used", columnList = "last_used")
+    })
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class UserAuth {
