@@ -1,11 +1,13 @@
 package com.jober.final2teamdrhong.config;
 
-import com.jober.final2teamdrhong.service.BlacklistService;
-import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.util.StringUtils;
+
+import com.jober.final2teamdrhong.dto.JwtClaims;
+import com.jober.final2teamdrhong.entity.User.UserRole;
 
 import jakarta.annotation.PostConstruct;
 import io.jsonwebtoken.Claims;
@@ -18,15 +20,15 @@ import io.jsonwebtoken.security.Keys;
 import io.jsonwebtoken.security.SecurityException;
 
 import java.security.Key;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Date;
 import java.util.UUID;
 
 @Configuration
 @Slf4j
-@RequiredArgsConstructor
 public class JwtConfig {
-
-    private final BlacklistService blacklistService;
     
     @Value("${jwt.secret.key:}")
     private String jwtSecretKey;
@@ -90,13 +92,17 @@ public class JwtConfig {
     }
     
     // 토큰 만료 시간 상수
-    private static final long ACCESS_TOKEN_VALIDITY = 1000 * 60 * 15; // 15분
+    public static final long ACCESS_TOKEN_VALIDITY = 1000 * 60 * 15; // 15분
     private static final long REFRESH_TOKEN_VALIDITY = 1000 * 60 * 60 * 24 * 7; // 7일
+
+    public long getAccessTokenValiditySeconds() {
+        return ACCESS_TOKEN_VALIDITY / 1000;
+    }
 
     /**
      * Access Token 생성 (API 호출용)
      */
-    public String generateAccessToken(String email, Long userId) {
+    public String generateAccessToken(String email, Integer userId) {
         Date now = new Date();
         Date validity = new Date(now.getTime() + ACCESS_TOKEN_VALIDITY);
         String jti = UUID.randomUUID().toString(); // JWT ID 생성
@@ -115,7 +121,7 @@ public class JwtConfig {
     /**
      * Refresh Token 생성 (토큰 갱신용)
      */
-    public String generateRefreshToken(String email, Long userId) {
+    public String generateRefreshToken(String email, Integer userId) {
         Date now = new Date();
         Date validity = new Date(now.getTime() + REFRESH_TOKEN_VALIDITY);
         String jti = UUID.randomUUID().toString(); // JWT ID 생성
@@ -286,5 +292,68 @@ public class JwtConfig {
             return authorizationHeader.substring(7); // "Bearer " 제거
         }
         return null;
+    }
+
+    /**
+     * JWT 토큰에서 JwtClaims 객체 생성
+     * @param token JWT 토큰 (Bearer 접두사 제거된 상태)
+     * @return JwtClaims 객체 (토큰이 유효하지 않으면 null)
+     */
+    public JwtClaims getJwtClaims(String token) {
+        try {
+            Claims claims = getClaimsFromToken(token);
+            if (claims == null) {
+                return null;
+            }
+
+            return JwtClaims.builder()
+                    .email(claims.getSubject())
+                    .userId(extractUserIdFromClaims(claims))
+                    .tokenType((String) claims.get("tokenType"))
+                    .jti(claims.getId())
+                    .expiresAt(convertToLocalDateTime(claims.getExpiration()))
+                    .build();
+        } catch (Exception e) {
+            log.error("JWT Claims 생성 실패: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Authorization 헤더에서 JwtClaims 객체 생성
+     * @param authorizationHeader "Bearer {token}" 형식의 헤더
+     * @return JwtClaims 객체 (헤더가 유효하지 않으면 null)
+     */
+    public JwtClaims getJwtClaimsFromHeader(String authorizationHeader) {
+        String token = extractTokenFromHeader(authorizationHeader);
+        if (token == null) {
+            return null;
+        }
+        return getJwtClaims(token);
+    }
+
+    // === Private Helper Methods ===
+
+    /**
+     * Claims에서 사용자 ID 안전하게 추출
+     */
+    private Integer extractUserIdFromClaims(Claims claims) {
+        Object userIdObj = claims.get("userId");
+        if (userIdObj instanceof Integer) {
+            return (Integer) userIdObj;
+        } else if (userIdObj instanceof Long) {
+            return ((Long) userIdObj).intValue();
+        }
+        return null;
+    }
+
+    /**
+     * Date를 LocalDateTime으로 변환
+     */
+    private LocalDateTime convertToLocalDateTime(Date date) {
+        if (date == null) return null;
+        return Instant.ofEpochMilli(date.getTime())
+                .atZone(ZoneId.systemDefault())
+                .toLocalDateTime();
     }
 }
