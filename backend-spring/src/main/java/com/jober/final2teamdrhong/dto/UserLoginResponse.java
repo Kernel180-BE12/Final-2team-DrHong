@@ -7,35 +7,7 @@ import lombok.Getter;
 
 import java.time.LocalDateTime;
 
-@Schema(
-    description = "로컬 로그인 응답 DTO",
-    examples = {
-        @io.swagger.v3.oas.annotations.media.ExampleObject(
-            name = "로그인 성공",
-            value = """
-            {
-                "success": true,
-                "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                "tokenType": "Bearer",
-                "userName": "홍길동",
-                "userRole": "USER",
-                "loginTime": "2023-12-01T10:30:00",
-                "message": "로그인이 성공적으로 완료되었습니다."
-            }
-            """
-        ),
-        @io.swagger.v3.oas.annotations.media.ExampleObject(
-            name = "로그인 실패",
-            value = """
-            {
-                "success": false,
-                "message": "이메일 또는 비밀번호가 일치하지 않습니다."
-            }
-            """
-        )
-    }
-)
+@Schema(description = "로컬 로그인 응답 DTO")
 @Getter
 public class UserLoginResponse {
 
