@@ -16,12 +16,15 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import org.springframework.test.context.ActiveProfiles;
 
 /**
  * FallbackVerificationStorage 단위 테스트
  * Redis -> RDB 폴백 로직 검증
+ * H2 인메모리 DB 사용
  */
 @ExtendWith(MockitoExtension.class)
+@ActiveProfiles("test")
 class FallbackVerificationStorageTest {
 
     @Mock

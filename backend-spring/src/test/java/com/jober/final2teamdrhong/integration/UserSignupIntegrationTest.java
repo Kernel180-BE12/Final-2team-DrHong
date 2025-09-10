@@ -28,7 +28,7 @@ import org.springframework.test.context.jdbc.Sql;
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-@ActiveProfiles("test")
+@ActiveProfiles("integration")
 @Sql(executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD, scripts = "classpath:cleanup-test-data.sql")
 class UserSignupIntegrationTest {
 
@@ -96,7 +96,7 @@ class UserSignupIntegrationTest {
         mockMvc.perform(post("/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("인증 코드가 일치하지 않습니다."));
 
         // then: 데이터베이스에 사용자가 저장되지 않았는지 확인
@@ -124,7 +124,7 @@ class UserSignupIntegrationTest {
         mockMvc.perform(post("/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("이미 가입된 이메일입니다."));
     }
 

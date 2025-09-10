@@ -62,7 +62,7 @@ dependencies {
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
-    compileOnly 'org.projectlombok:lombok'
+    implementation 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
     implementation 'org.thymeleaf.extras:thymeleaf-extras-springsecurity6'
     implementation 'org.springframework.boot:spring-boot-starter-webflux'
@@ -77,4 +77,59 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+}
+
+// =========================================
+// 테스트 프로파일별 실행 태스크
+// =========================================
+
+// 단위테스트 실행 (H2 인메모리 DB + Mock)
+task unitTest(type: Test) {
+    useJUnitPlatform()
+    systemProperty 'spring.profiles.active', 'test'
+    include '**/service/**Test.class'
+    include '**/config/**Test.class'
+    exclude '**/integration/**Test.class'
+    testLogging {
+        events "passed", "skipped", "failed"
+        exceptionFormat "full"
+    }
+}
+
+// 통합테스트 실행 (원격 MySQL RDS + Redis + Gmail SMTP)
+task integrationTest(type: Test) {
+    useJUnitPlatform()
+    systemProperty 'spring.profiles.active', 'integration'
+    include '**/integration/**Test.class'
+    testLogging {
+        events "passed", "skipped", "failed"
+        exceptionFormat "full"
+    }
+}
+
+// Redis 폴백 테스트 실행 (RDB만 사용)
+task redisFallbackTest(type: Test) {
+    useJUnitPlatform()
+    systemProperty 'spring.profiles.active', 'redis-fallback-test'
+    include '**/integration/RedisFallbackIntegrationTest.class'
+    testLogging {
+        events "passed", "skipped", "failed"
+        exceptionFormat "full"
+    }
+}
+
+// 모든 테스트 실행 (기본)
+task allTests(type: Test) {
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+        exceptionFormat "full"
+    }
+}
+
+// 테스트 그룹 정의
+task testGroup {
+    group = 'verification'
+    description = 'Run all test groups'
+    dependsOn unitTest, integrationTest, redisFallbackTest
 }
