@@ -38,4 +38,35 @@ public class RedisVerificationStorage implements VerificationStorage {
     public void delete(String key) {
         redisTemplate.delete(key);
     }
+    
+    /**
+     * Redis에서 원자적 검증 및 삭제 (일회성 검증)
+     * Lua 스크립트를 사용하여 레이스 컨디션 방지
+     */
+    @Override
+    public boolean validateAndDelete(String key, String expectedValue) {
+        // Lua 스크립트: 값을 비교하고 일치하면 삭제
+        String luaScript = """
+            local value = redis.call('GET', KEYS[1])
+            if value == ARGV[1] then
+                redis.call('DEL', KEYS[1])
+                return 1
+            else
+                return 0
+            end
+            """;
+        
+        Long result = redisTemplate.execute(
+            (connection) -> connection.eval(
+                luaScript.getBytes(),
+                org.springframework.data.redis.connection.ReturnType.INTEGER,
+                1,
+                key.getBytes(),
+                expectedValue.getBytes()
+            ),
+            true
+        );
+        
+        return result != null && result == 1L;
+    }
 }
