@@ -97,7 +97,7 @@ class UserSignupIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.message").value("인증 코드가 일치하지 않습니다."));
+                .andExpect(jsonPath("$.message").value("인증 코드가 일치하지 않거나 만료되었습니다."));
 
         // then: 데이터베이스에 사용자가 저장되지 않았는지 확인
         assertThat(userRepository.findByUserEmail(email)).isEmpty();
