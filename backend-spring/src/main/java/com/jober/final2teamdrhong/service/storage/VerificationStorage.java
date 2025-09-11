@@ -26,4 +26,19 @@ public interface VerificationStorage {
      * @param key 삭제할 키
      */
     void delete(String key);
+    
+    /**
+     * 인증 코드를 검증하고 즉시 삭제합니다 (일회성 검증)
+     * @param key 검증할 키
+     * @param expectedValue 예상 값
+     * @return 검증 성공 여부
+     */
+    default boolean validateAndDelete(String key, String expectedValue) {
+        Optional<String> actualValue = find(key);
+        if (actualValue.isPresent() && actualValue.get().equals(expectedValue)) {
+            delete(key);
+            return true;
+        }
+        return false;
+    }
 }
