@@ -41,4 +41,26 @@ public class RdbVerificationStorage implements VerificationStorage {
     public void delete(String key) {
         repository.deleteByEmail(key);
     }
+    
+    /**
+     * 트랜잭션 기반 일회성 검증 및 삭제
+     * DB 레벨에서 동시성 문제 해결
+     */
+    @Override
+    @Transactional
+    public boolean validateAndDelete(String key, String expectedValue) {
+        Optional<EmailVerification> verification = repository.findByEmail(key);
+        
+        if (verification.isPresent() && 
+            verification.get().isValid() && 
+            verification.get().getVerificationCode().equals(expectedValue)) {
+            
+            // 검증 성공 시 즉시 삭제
+            repository.deleteByEmail(key);
+            repository.flush(); // 즉시 반영
+            return true;
+        }
+        
+        return false;
+    }
 }
