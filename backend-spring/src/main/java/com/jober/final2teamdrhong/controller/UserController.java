@@ -83,17 +83,80 @@ public class UserController {
             responseCode = "200", 
             description = "회원가입 성공",
             content = @Content(
-                schema = @Schema(implementation = UserSignupResponse.class))),
+                schema = @Schema(implementation = UserSignupResponse.class),
+                examples = @io.swagger.v3.oas.annotations.media.ExampleObject(
+                    name = "회원가입 성공",
+                    value = """
+                    {
+                        "success": true,
+                        "message": "회원가입이 성공적으로 완료되었습니다.",
+                        "data": null
+                    }
+                    """
+                )
+            )
+        ),
         @ApiResponse(
             responseCode = "400", 
             description = "잘못된 요청",
             content = @Content(
-                schema = @Schema(implementation = UserSignupResponse.class))),
+                schema = @Schema(implementation = UserSignupResponse.class),
+                examples = {
+                    @io.swagger.v3.oas.annotations.media.ExampleObject(
+                        name = "중복 이메일",
+                        value = """
+                        {
+                            "success": false,
+                            "message": "이미 가입된 이메일입니다.",
+                            "data": null
+                        }
+                        """
+                    ),
+                    @io.swagger.v3.oas.annotations.media.ExampleObject(
+                        name = "잘못된 인증코드",
+                        value = """
+                        {
+                            "success": false,
+                            "message": "인증 코드가 일치하지 않습니다.",
+                            "data": null
+                        }
+                        """
+                    ),
+                    @io.swagger.v3.oas.annotations.media.ExampleObject(
+                        name = "유효성 검증 실패",
+                        value = """
+                        {
+                            "success": false,
+                            "message": "비밀번호는 6-20자의 대소문자, 숫자, 특수문자를 포함해야 합니다.",
+                            "data": null
+                        }
+                        """
+                    )
+                }
+            )
+        ),
         @ApiResponse(
             responseCode = "429", 
             description = "Rate Limit 초과",
             content = @Content(
-                schema = @Schema(implementation = UserSignupResponse.class)))
+                schema = @Schema(implementation = UserSignupResponse.class),
+                examples = @io.swagger.v3.oas.annotations.media.ExampleObject(
+                    name = "회원가입 속도 제한",
+                    value = """
+                    {
+                        "success": false,
+                        "message": "회원가입 속도 제한을 초과했습니다. 3600초 후 다시 시도해주세요.",
+                        "data": null
+                    }
+                    """
+                )
+            ),
+            headers = @io.swagger.v3.oas.annotations.headers.Header(
+                name = "Retry-After",
+                description = "다시 시도 가능한 시간(초)",
+                schema = @Schema(type = "integer", example = "3600")
+            )
+        )
     })
     @PostMapping("/signup")
     public ResponseEntity<UserSignupResponse> signup(

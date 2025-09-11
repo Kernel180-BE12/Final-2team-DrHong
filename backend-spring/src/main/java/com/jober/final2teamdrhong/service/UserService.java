@@ -55,7 +55,6 @@ public class UserService {
         signup(requestDto);
     }
 
-    @CacheEvict(value = "userEmailCheck", key = "#requestDto.email")
     public void signup(UserSignupRequest requestDto) {
         log.info("회원가입 시작: email={}", requestDto.getEmail());
         

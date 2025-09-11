@@ -15,12 +15,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.then;
+<<<<<<< HEAD
 import org.springframework.test.context.ActiveProfiles;
+=======
+>>>>>>> origin/dev
 
 /**
  * EmailService 단위 테스트
  * Mock을 사용하여 실제 이메일 발송 없이 로직만 테스트
+<<<<<<< HEAD
  * H2 인메모리 DB 사용
+=======
+>>>>>>> origin/dev
  */
 @ExtendWith(MockitoExtension.class)
 @ActiveProfiles("test")
