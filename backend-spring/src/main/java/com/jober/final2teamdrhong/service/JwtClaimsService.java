@@ -7,6 +7,8 @@ import com.jober.final2teamdrhong.exception.AuthenticationException;
 import com.jober.final2teamdrhong.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 
 /**
@@ -64,6 +66,7 @@ public class JwtClaimsService {
      * @return 사용자 정보가 추가된 JwtClaims
      * @throws AuthenticationException 사용자를 찾을 수 없는 경우
      */
+    @Cacheable(value = "userInfo", key = "#basicClaims.email + ':' + #basicClaims.userId")
     public JwtClaims enrichWithUserInfo(JwtClaims basicClaims) {
         if (basicClaims.getEmail() == null || basicClaims.getUserId() == null) {
             throw new AuthenticationException("토큰에 필수 정보가 누락되었습니다");
@@ -90,5 +93,24 @@ public class JwtClaimsService {
                 .userName(user.getUserName())
                 .userRole(user.getUserRole())
                 .build();
+    }
+    
+    /**
+     * 사용자 정보 캐시 무효화 (사용자 정보 변경 시 호출)
+     * 
+     * @param email 사용자 이메일
+     * @param userId 사용자 ID
+     */
+    @CacheEvict(value = "userInfo", key = "#email + ':' + #userId")
+    public void evictUserInfoCache(String email, Integer userId) {
+        log.debug("사용자 정보 캐시 무효화: email={}, userId={}", email, userId);
+    }
+    
+    /**
+     * 모든 사용자 정보 캐시 무효화
+     */
+    @CacheEvict(value = "userInfo", allEntries = true)
+    public void evictAllUserInfoCache() {
+        log.debug("모든 사용자 정보 캐시 무효화");
     }
 }
