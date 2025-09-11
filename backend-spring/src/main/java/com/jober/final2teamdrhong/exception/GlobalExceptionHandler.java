@@ -2,7 +2,10 @@ package com.jober.final2teamdrhong.exception;
 
 import com.jober.final2teamdrhong.dto.UserLoginResponse;
 import com.jober.final2teamdrhong.dto.UserSignupResponse;
+import com.jober.final2teamdrhong.service.SecurityAuditService;
+import com.jober.final2teamdrhong.util.ClientIpUtil;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,8 +26,11 @@ import java.util.List;
  * - RateLimitExceededException: HTTP 429 + Retry-After 헤더
  */
 @RestControllerAdvice
+@RequiredArgsConstructor
 @Slf4j
 public class GlobalExceptionHandler {
+    
+    private final SecurityAuditService securityAuditService;
 
     // 1. @Valid 검증 실패 시 발생하는 예외를 처리하는 메서드
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -76,6 +82,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<?> handleAuthenticationException(AuthenticationException ex, HttpServletRequest request) {
         log.warn("Authentication failed: path={}, error={}", request.getRequestURI(), ex.getMessage());
+        
+        // 보안 이벤트 로깅
+        String clientIp = ClientIpUtil.getClientIpAddress(request);
+        String userAgent = request.getHeader("User-Agent");
+        securityAuditService.logAuthenticationFailure(
+            extractEmailFromRequest(request), 
+            clientIp, 
+            ex.getMessage(), 
+            userAgent
+        );
         
         if (isAuthApi(request)) {
             // 로그인 API의 경우 UserLoginResponse 형태로 에러 응답
@@ -223,5 +239,26 @@ public class GlobalExceptionHandler {
     private boolean isAuthApi(HttpServletRequest request) {
         String path = request.getRequestURI();
         return path != null && path.startsWith("/auth/");
+    }
+    
+    /**
+     * 요청에서 이메일 추출 (로깅용)
+     */
+    private String extractEmailFromRequest(HttpServletRequest request) {
+        try {
+            // Request body에서 이메일 추출 시도 (간단한 경우만)
+            String queryString = request.getQueryString();
+            if (queryString != null && queryString.contains("email=")) {
+                String[] params = queryString.split("&");
+                for (String param : params) {
+                    if (param.startsWith("email=")) {
+                        return param.substring(6); // "email=" 제거
+                    }
+                }
+            }
+            return "unknown"; // 추출 실패 시 기본값
+        } catch (Exception e) {
+            return "unknown";
+        }
     }
 }
