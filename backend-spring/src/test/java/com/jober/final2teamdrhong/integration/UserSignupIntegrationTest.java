@@ -1,11 +1,10 @@
 package com.jober.final2teamdrhong.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jober.final2teamdrhong.dto.UserSignupRequest;
+import com.jober.final2teamdrhong.dto.UserSignup.UserSignupRequest;
 import com.jober.final2teamdrhong.entity.User;
 import com.jober.final2teamdrhong.repository.UserRepository;
 import com.jober.final2teamdrhong.service.storage.VerificationStorage;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,11 +27,7 @@ import org.springframework.test.context.jdbc.Sql;
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-<<<<<<< HEAD
-@ActiveProfiles("integration")
-=======
 @ActiveProfiles("test")
->>>>>>> origin/dev
 @Sql(executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD, scripts = "classpath:cleanup-test-data.sql")
 class UserSignupIntegrationTest {
 
@@ -100,13 +95,8 @@ class UserSignupIntegrationTest {
         mockMvc.perform(post("/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-<<<<<<< HEAD
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.message").value("인증 코드가 일치하지 않거나 만료되었습니다."));
-=======
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("인증 코드가 일치하지 않습니다."));
->>>>>>> origin/dev
 
         // then: 데이터베이스에 사용자가 저장되지 않았는지 확인
         assertThat(userRepository.findByUserEmail(email)).isEmpty();
@@ -133,11 +123,7 @@ class UserSignupIntegrationTest {
         mockMvc.perform(post("/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
-<<<<<<< HEAD
                 .andExpect(status().isConflict())
-=======
-                .andExpect(status().isBadRequest())
->>>>>>> origin/dev
                 .andExpect(jsonPath("$.message").value("이미 가입된 이메일입니다."));
     }
 

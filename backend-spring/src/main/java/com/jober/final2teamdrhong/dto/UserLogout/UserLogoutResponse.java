@@ -1,4 +1,4 @@
-package com.jober.final2teamdrhong.dto;
+package com.jober.final2teamdrhong.dto.UserLogout;
 
 import lombok.Builder;
 import lombok.Getter;

@@ -1,4 +1,4 @@
-package com.jober.final2teamdrhong.dto;
+package com.jober.final2teamdrhong.dto.UserLogin;
 
 import com.jober.final2teamdrhong.entity.User;
 import io.swagger.v3.oas.annotations.media.Schema;

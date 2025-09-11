@@ -1,9 +1,8 @@
 package com.jober.final2teamdrhong.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jober.final2teamdrhong.dto.UserLoginRequest;
-import com.jober.final2teamdrhong.dto.UserSignupRequest;
-import com.jober.final2teamdrhong.entity.User;
+import com.jober.final2teamdrhong.dto.UserLogin.UserLoginRequest;
+import com.jober.final2teamdrhong.dto.UserSignup.UserSignupRequest;
 import com.jober.final2teamdrhong.repository.UserRepository;
 import com.jober.final2teamdrhong.service.BlacklistService;
 import com.jober.final2teamdrhong.service.RefreshTokenService;

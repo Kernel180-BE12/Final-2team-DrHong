@@ -1,7 +1,7 @@
 package com.jober.final2teamdrhong.filter;
 
 import com.jober.final2teamdrhong.config.JwtConfig;
-import com.jober.final2teamdrhong.dto.JwtClaims;
+import com.jober.final2teamdrhong.dto.JwtClaims.JwtClaims;
 import com.jober.final2teamdrhong.service.JwtClaimsService;
 import com.jober.final2teamdrhong.service.BlacklistService;
 import jakarta.servlet.FilterChain;

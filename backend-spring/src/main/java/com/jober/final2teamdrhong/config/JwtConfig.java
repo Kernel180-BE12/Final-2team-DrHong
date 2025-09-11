@@ -1,13 +1,11 @@
 package com.jober.final2teamdrhong.config;
 
-import org.springframework.stereotype.Component;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.util.StringUtils;
 
-import com.jober.final2teamdrhong.dto.JwtClaims;
-import com.jober.final2teamdrhong.entity.User.UserRole;
+import com.jober.final2teamdrhong.dto.JwtClaims.JwtClaims;
 
 import jakarta.annotation.PostConstruct;
 import io.jsonwebtoken.Claims;

@@ -1,12 +1,14 @@
 package com.jober.final2teamdrhong.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jober.final2teamdrhong.dto.UserLoginRequest;
-import com.jober.final2teamdrhong.dto.UserLoginResponse;
-import com.jober.final2teamdrhong.dto.UserSignupRequest;
+import com.jober.final2teamdrhong.dto.UserLogin.UserLoginRequest;
+import com.jober.final2teamdrhong.dto.UserLogin.UserLoginResponse;
+import com.jober.final2teamdrhong.dto.UserSignup.UserSignupRequest;
 import com.jober.final2teamdrhong.service.UserService;
 import com.jober.final2teamdrhong.service.EmailService;
+import com.jober.final2teamdrhong.service.RateLimitService;
 import com.jober.final2teamdrhong.entity.User;
+import com.jober.final2teamdrhong.exception.RateLimitExceededException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,6 +25,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -47,6 +50,9 @@ class UserControllerTest {
 
     @MockBean
     private EmailService emailService;
+
+    @MockBean
+    private RateLimitService rateLimitService;
 
     private UserSignupRequest validSignupRequest;
     private UserLoginRequest validLoginRequest;
@@ -97,12 +103,12 @@ class UserControllerTest {
                 .verificationCode("123456")
                 .build();
 
-        // when & then
+        // when & then - ErrorResponse로 변경
         mockMvc.perform(post("/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(invalidRequest)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.success").value(false));
+                .andExpect(jsonPath("$.message").exists());  // ErrorResponse는 message 필드만 있음
 
         // Service 메서드 호출되지 않음 확인
         then(userService).shouldHaveNoInteractions();
@@ -154,12 +160,53 @@ class UserControllerTest {
         // given
         String invalidJson = "{invalid json}";
 
-        // when & then
+        // when & then - ErrorResponse 형식 검증
         mockMvc.perform(post("/auth/signup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(invalidJson))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("잘못된 요청 형식입니다. JSON 형식을 확인해주세요."));
 
         then(userService).shouldHaveNoInteractions();
+    }
+
+    @Test
+    @DisplayName("실패: Rate Limit 초과 - 회원가입")
+    void signup_fail_rate_limit_exceeded() throws Exception {
+        // given - Rate Limit 예외 Mock 설정
+        willThrow(new RateLimitExceededException("회원가입 요청이 너무 많습니다. 3600초 후 다시 시도해주세요.", 3600L))
+                .given(userService).signupWithRateLimit(any(UserSignupRequest.class), anyString());
+
+        // when & then - ErrorResponse with retryAfterSeconds
+        mockMvc.perform(post("/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validSignupRequest)))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "3600"))
+                .andExpect(jsonPath("$.message").value("회원가입 요청이 너무 많습니다. 3600초 후 다시 시도해주세요."))
+                .andExpect(jsonPath("$.retryAfterSeconds").value(3600));
+
+        then(userService).should().signupWithRateLimit(any(UserSignupRequest.class), anyString());
+    }
+
+    @Test
+    @DisplayName("실패: Rate Limit 초과 - 이메일 발송")
+    void sendVerificationCode_fail_rate_limit_exceeded() throws Exception {
+        // given - Rate Limit 예외 Mock 설정
+        willThrow(new RateLimitExceededException("이메일 발송 요청이 너무 많습니다. 300초 후 다시 시도해주세요.", 300L))
+                .given(emailService).sendVerificationCodeWithRateLimit(anyString(), anyString());
+
+        String requestBody = "{\"email\":\"test@example.com\"}";
+
+        // when & then - ErrorResponse with retryAfterSeconds
+        mockMvc.perform(post("/auth/send-verification-code")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "300"))
+                .andExpect(jsonPath("$.message").value("이메일 발송 요청이 너무 많습니다. 300초 후 다시 시도해주세요."))
+                .andExpect(jsonPath("$.retryAfterSeconds").value(300));
+
+        then(emailService).should().sendVerificationCodeWithRateLimit(anyString(), anyString());
     }
 }

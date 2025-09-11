@@ -7,6 +7,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataAccessException;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.util.Optional;
 
@@ -16,23 +17,14 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
-<<<<<<< HEAD
-import org.springframework.test.context.ActiveProfiles;
-=======
->>>>>>> origin/dev
 
 /**
  * FallbackVerificationStorage 단위 테스트
  * Redis -> RDB 폴백 로직 검증
-<<<<<<< HEAD
  * H2 인메모리 DB 사용
  */
 @ExtendWith(MockitoExtension.class)
 @ActiveProfiles("test")
-=======
- */
-@ExtendWith(MockitoExtension.class)
->>>>>>> origin/dev
 class FallbackVerificationStorageTest {
 
     @Mock

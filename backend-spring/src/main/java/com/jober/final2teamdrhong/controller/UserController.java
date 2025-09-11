@@ -1,12 +1,12 @@
 package com.jober.final2teamdrhong.controller;
 
 import com.jober.final2teamdrhong.config.JwtConfig;
-import com.jober.final2teamdrhong.dto.EmailRequest;
-import com.jober.final2teamdrhong.dto.UserLoginRequest;
-import com.jober.final2teamdrhong.dto.UserLoginResponse;
-import com.jober.final2teamdrhong.dto.UserLogoutResponse;
-import com.jober.final2teamdrhong.dto.UserSignupRequest;
-import com.jober.final2teamdrhong.dto.UserSignupResponse;
+import com.jober.final2teamdrhong.dto.EmailVerification.EmailRequest;
+import com.jober.final2teamdrhong.dto.UserLogin.UserLoginRequest;
+import com.jober.final2teamdrhong.dto.UserLogin.UserLoginResponse;
+import com.jober.final2teamdrhong.dto.UserLogout.UserLogoutResponse;
+import com.jober.final2teamdrhong.dto.UserSignup.UserSignupRequest;
+import com.jober.final2teamdrhong.dto.UserSignup.UserSignupResponse;
 import com.jober.final2teamdrhong.service.BlacklistService;
 import com.jober.final2teamdrhong.service.EmailService;
 import com.jober.final2teamdrhong.service.RateLimitService;

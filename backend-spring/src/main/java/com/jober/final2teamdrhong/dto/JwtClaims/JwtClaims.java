@@ -1,4 +1,4 @@
-package com.jober.final2teamdrhong.dto;
+package com.jober.final2teamdrhong.dto.JwtClaims;
 
 import com.jober.final2teamdrhong.entity.User.UserRole;
 import lombok.AllArgsConstructor;

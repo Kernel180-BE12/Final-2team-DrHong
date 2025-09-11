@@ -1,7 +1,7 @@
 package com.jober.final2teamdrhong.service;
 
 import com.jober.final2teamdrhong.config.JwtConfig;
-import com.jober.final2teamdrhong.dto.JwtClaims;
+import com.jober.final2teamdrhong.dto.JwtClaims.JwtClaims;
 import com.jober.final2teamdrhong.entity.User;
 import com.jober.final2teamdrhong.exception.AuthenticationException;
 import com.jober.final2teamdrhong.repository.UserRepository;
