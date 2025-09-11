@@ -17,7 +17,7 @@ import com.jober.final2teamdrhong.exception.AuthenticationException;
 import com.jober.final2teamdrhong.exception.DuplicateResourceException;
 import com.jober.final2teamdrhong.exception.BusinessException;
 import com.jober.final2teamdrhong.util.LogMaskingUtil;
-import com.jober.final2teamdrhong.constant.AuthConstants;
+import com.jober.final2teamdrhong.config.AuthProperties;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,14 +32,16 @@ public class UserService {
     private final RateLimitService rateLimitService;
     private final JwtConfig jwtConfig;
     private final RefreshTokenService refreshTokenService;
+    private final AuthProperties authProperties;
 
-    public UserService(VerificationStorage verificationStorage, UserRepository userRepository, PasswordEncoder passwordEncoder, RateLimitService rateLimitService, JwtConfig jwtConfig, RefreshTokenService refreshTokenService) {
+    public UserService(VerificationStorage verificationStorage, UserRepository userRepository, PasswordEncoder passwordEncoder, RateLimitService rateLimitService, JwtConfig jwtConfig, RefreshTokenService refreshTokenService, AuthProperties authProperties) {
         this.verificationStorage = verificationStorage;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.rateLimitService = rateLimitService;
         this.jwtConfig = jwtConfig;
         this.refreshTokenService = refreshTokenService;
+        this.authProperties = authProperties;
     }
 
     /**
@@ -85,8 +87,7 @@ public class UserService {
             
             log.info("회원가입 성공: userId={}, email={}", newUser.getUserId(), requestDto.getEmail());
             
-            // 7. 회원가입 성공 후에만 인증 코드 삭제 (트랜잭션 외부에서 실행)
-            deleteVerificationCodeAfterSuccess(requestDto.getEmail());
+            // 주의: 인증 코드는 이미 validateVerificationCode에서 일회성 검증으로 삭제됨
             
         } catch (Exception e) {
             log.error("회원가입 실패: email={}, error={}", requestDto.getEmail(), e.getMessage());
@@ -123,15 +124,15 @@ public class UserService {
         // Rate limiting 검사: 이메일별 검증 실패 제한
         rateLimitService.checkEmailVerifyRateLimit(email);
         
-        String savedCode = verificationStorage.find(email)
-                .orElseThrow(() -> new BusinessException("인증 코드가 만료되었거나 유효하지 않습니다."));
+        // 일회성 검증: 검증 성공 시 즉시 삭제
+        boolean isValid = verificationStorage.validateAndDelete(email, inputCode);
         
-        if (!constantTimeEquals(savedCode, inputCode)) {
-            log.warn("인증 코드 불일치: email={}", LogMaskingUtil.maskEmail(email));
-            throw new AuthenticationException("인증 코드가 일치하지 않습니다.");
+        if (!isValid) {
+            log.warn("인증 코드 불일치 또는 만료: email={}", LogMaskingUtil.maskEmail(email));
+            throw new AuthenticationException("인증 코드가 일치하지 않거나 만료되었습니다.");
         }
         
-        log.info("인증 코드 검증 성공: email={}", LogMaskingUtil.maskEmail(email));
+        log.info("인증 코드 검증 성공 (일회성): email={}", LogMaskingUtil.maskEmail(email));
     }
     
     /**
@@ -214,7 +215,7 @@ public class UserService {
      * 사용자 인증 수행
      */
     private AuthenticationResult authenticateUser(UserLoginRequest request) {
-        String targetHash = AuthConstants.DUMMY_HASH;
+        String targetHash = authProperties.getSecurity().getDummyHash();
         User user = userRepository.findByUserEmailWithAuth(request.getEmail()).orElse(null);
         UserAuth localAuth = null;
         
@@ -237,19 +238,19 @@ public class UserService {
      * 인증 실패 처리
      */
     private void handleAuthenticationFailure(String email) {
-        ensureMinimumResponseTime(AuthConstants.MIN_RESPONSE_TIME_MS);
+        ensureMinimumResponseTime(authProperties.getSecurity().getMinResponseTimeMs());
         log.warn("로그인 실패: email={}, reason=인증 정보 불일치", LogMaskingUtil.maskEmail(email));
-        throw new BadCredentialsException(AuthConstants.INVALID_CREDENTIALS);
+        throw new BadCredentialsException(authProperties.getMessages().getInvalidCredentials());
     }
     
     /**
      * 예상치 못한 오류 처리
      */
     private void handleUnexpectedError(String email, Exception e) {
-        ensureMinimumResponseTime(AuthConstants.MIN_RESPONSE_TIME_MS);
+        ensureMinimumResponseTime(authProperties.getSecurity().getMinResponseTimeMs());
         log.error("로그인 처리 중 오류 발생: email={}, error={}", 
                 LogMaskingUtil.maskEmail(email), e.getMessage());
-        throw new BadCredentialsException(AuthConstants.INVALID_CREDENTIALS);
+        throw new BadCredentialsException(authProperties.getMessages().getInvalidCredentials());
     }
     
     /**
