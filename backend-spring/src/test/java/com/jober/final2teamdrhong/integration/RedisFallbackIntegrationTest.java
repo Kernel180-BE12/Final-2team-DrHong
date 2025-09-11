@@ -17,10 +17,12 @@ import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
+import com.jober.final2teamdrhong.config.RedisFallbackTestConfig;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -37,6 +39,7 @@ import org.springframework.test.context.jdbc.Sql;
 @Transactional
 @ActiveProfiles("redis-fallback-test") // Redis 폴백 테스트 설정 사용
 @EnableAutoConfiguration(exclude = RedisAutoConfiguration.class) // Redis 비활성화
+@Import(RedisFallbackTestConfig.class) // 더미 Redis 설정 임포트
 @Sql(executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD, scripts = "classpath:cleanup-test-data.sql")
 class RedisFallbackIntegrationTest {
 
@@ -110,7 +113,7 @@ class RedisFallbackIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.message").value("인증 코드가 일치하지 않습니다."));
+                .andExpect(jsonPath("$.message").value("인증 코드가 일치하지 않거나 만료되었습니다."));
 
         // then: 데이터베이스에 사용자가 저장되지 않았는지 확인
         assertThat(userRepository.findByUserEmail(email)).isEmpty();
