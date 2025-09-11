@@ -230,7 +230,7 @@ public class UserController {
         
         // 2. Refresh Token 처리 (Request Body에서 추출)
         String refreshToken = logoutRequest.get("refreshToken");
-        if (refreshToken != null) {
+        if (refreshToken != null && jwtConfig.validateToken(refreshToken) && jwtConfig.isRefreshToken(refreshToken)) {
             try {
                 refreshTokenService.revokeRefreshToken(refreshToken);
                 log.info("Refresh Token이 무효화되었습니다: ip={}", LogMaskingUtil.maskIpAddress(clientIp));
@@ -238,6 +238,8 @@ public class UserController {
                 log.warn("Refresh Token 무효화 실패: ip={}, error={}", 
                         LogMaskingUtil.maskIpAddress(clientIp), e.getMessage());
             }
+        } else if (refreshToken != null) {
+            log.warn("유효하지 않은 Refresh Token 형식: ip={}", LogMaskingUtil.maskIpAddress(clientIp));
         }
         
         log.info("로그아웃 완료: ip={}", LogMaskingUtil.maskIpAddress(clientIp));
