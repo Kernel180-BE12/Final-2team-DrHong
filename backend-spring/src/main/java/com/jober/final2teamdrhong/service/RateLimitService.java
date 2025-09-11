@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
 /**
@@ -38,6 +39,9 @@ public class RateLimitService {
     
     // 인메모리 버킷 저장소 (Redis 비활성화 시 폴백용)
     private final Map<String, Bucket> inMemoryBuckets = new ConcurrentHashMap<>();
+    
+    // 버킷 생성 동기화용 락 (동일 키에 대한 중복 생성 방지)
+    private final Map<String, ReentrantLock> bucketLocks = new ConcurrentHashMap<>();
     
     @Autowired
     public RateLimitService(RateLimitConfig rateLimitConfig, 
@@ -215,12 +219,43 @@ public class RateLimitService {
             return proxyManager.builder()
                     .build(key.getBytes(), configSupplier);
         } else {
-            // Redis 비활성화 시 인메모리 폴백 사용
-            return inMemoryBuckets.computeIfAbsent(key, k -> 
-                Bucket.builder()
+            // Redis 비활성화 시 인메모리 폴백 사용 (동기화된 버킷 생성)
+            return getOrCreateInMemoryBucket(key, configSupplier);
+        }
+    }
+    
+    /**
+     * 인메모리 버킷 동기화된 생성/조회
+     * 동일 키에 대한 중복 생성 방지
+     */
+    private Bucket getOrCreateInMemoryBucket(String key, Supplier<BucketConfiguration> configSupplier) {
+        // 이미 존재하는 버킷 반환
+        Bucket existingBucket = inMemoryBuckets.get(key);
+        if (existingBucket != null) {
+            return existingBucket;
+        }
+        
+        // 키별 락 획득 (동일 키에 대한 동시 생성 방지)
+        ReentrantLock lock = bucketLocks.computeIfAbsent(key, k -> new ReentrantLock());
+        
+        lock.lock();
+        try {
+            // 다시 한 번 확인 (다른 스레드가 이미 생성했을 수 있음)
+            existingBucket = inMemoryBuckets.get(key);
+            if (existingBucket != null) {
+                return existingBucket;
+            }
+            
+            // 새 버킷 생성 및 저장
+            Bucket newBucket = Bucket.builder()
                     .addLimit(getBandwidthFromConfig(configSupplier.get()))
-                    .build()
-            );
+                    .build();
+            
+            inMemoryBuckets.put(key, newBucket);
+            return newBucket;
+            
+        } finally {
+            lock.unlock();
         }
     }
     
