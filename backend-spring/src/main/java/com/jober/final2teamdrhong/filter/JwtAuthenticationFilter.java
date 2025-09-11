@@ -3,6 +3,7 @@ package com.jober.final2teamdrhong.filter;
 import com.jober.final2teamdrhong.config.JwtConfig;
 import com.jober.final2teamdrhong.dto.JwtClaims;
 import com.jober.final2teamdrhong.service.JwtClaimsService;
+import com.jober.final2teamdrhong.service.BlacklistService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -26,6 +27,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtConfig jwtConfig;
     private final JwtClaimsService jwtClaimsService;
+    private final BlacklistService blacklistService;
 
 
     @Override
@@ -35,8 +37,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             // 1. Authorization 헤더에서 토큰 추출
             String token = jwtConfig.extractTokenFromHeader(request.getHeader("Authorization"));
 
-            // 2. 토큰이 유효한지 검증
-            if (token != null && jwtConfig.validateToken(token)) {
+            // 2. 토큰이 유효한지 검증 (서명, 만료시간, 블랙리스트)
+            if (token != null && jwtConfig.validateToken(token) && !blacklistService.isTokenBlacklisted(token)) {
 
                 // 3. 토큰에서 기본 Claims를 추출하고 DB정보로 보완
                 JwtClaims claims = jwtClaimsService.getEnrichedClaims(token);
