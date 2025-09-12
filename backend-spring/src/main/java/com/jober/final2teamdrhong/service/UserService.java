@@ -92,21 +92,6 @@ public class UserService {
         }
     }
     
-    /**
-     * 회원가입 성공 후 인증 코드 삭제
-     * 별도 트랜잭션으로 실행하여 회원가입 실패 시에도 인증 코드가 유지되도록 함
-     */
-    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
-    protected void deleteVerificationCodeAfterSuccess(String email) {
-        try {
-            verificationStorage.delete(email);
-            log.info("인증 코드 삭제 완료: email={}", email);
-        } catch (Exception e) {
-            // 인증 코드 삭제 실패는 회원가입에 영향주지 않음
-            log.warn("인증 코드 삭제 실패 (회원가입은 성공): email={}, error={}", email, e.getMessage());
-        }
-    }
-    
     private void validateBusinessRules(UserSignupRequest requestDto) {
         // 이메일 중복 확인 (비즈니스 규칙)
         if (userRepository.findByUserEmail(requestDto.getEmail()).isPresent()) {
@@ -130,27 +115,6 @@ public class UserService {
         }
         
         log.info("인증 코드 검증 성공 (일회성): email={}", LogMaskingUtil.maskEmail(email));
-    }
-    
-    /**
-     * 타이밍 공격을 방지하기 위한 상수 시간 문자열 비교
-     */
-    private boolean constantTimeEquals(String a, String b) {
-        // null 값은 항상 false (보안상 null == null도 인증 실패)
-        if (a == null || b == null) {
-            return false;
-        }
-        
-        if (a.length() != b.length()) {
-            return false;
-        }
-        
-        int result = 0;
-        for (int i = 0; i < a.length(); i++) {
-            result |= a.charAt(i) ^ b.charAt(i);
-        }
-
-        return result == 0;
     }
 
     /**

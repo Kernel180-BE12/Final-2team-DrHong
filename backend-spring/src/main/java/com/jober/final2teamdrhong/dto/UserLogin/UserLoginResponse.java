@@ -47,20 +47,6 @@ public class UserLoginResponse {
         this.message = message;
     }
 
-    // 정적 팩토리 메서드 : user 객체와 액세스 토큰만 받아 Response 생성 (기존 호환성)
-    public static UserLoginResponse of(User user, String token) {
-        return UserLoginResponse.builder()
-                .success(true)
-                .token(token)
-                .refreshToken(null)
-                .tokenType("Bearer")
-                .userName(user.getUserName())
-                .userRole(user.getUserRole().name())
-                .loginTime(LocalDateTime.now())
-                .message("로그인이 성공적으로 완료되었습니다.")
-                .build();
-    }
-
     // 정적 팩토리 메서드 : Refresh Token을 포함한 완전한 로그인 응답 생성
     public static UserLoginResponse withRefreshToken(User user, String accessToken, String refreshToken) {
         return UserLoginResponse.builder()
@@ -86,20 +72,6 @@ public class UserLoginResponse {
                 .userRole(null)
                 .loginTime(null)
                 .message(errorMessage)
-                .build();
-    }
-
-    // 정적 팩토리 메서드 : 성공 메시지만 반환 (로그아웃 등)
-    public static UserLoginResponse success(String message) {
-        return UserLoginResponse.builder()
-                .success(true)
-                .token(null)
-                .refreshToken(null)
-                .tokenType(null)
-                .userName(null)
-                .userRole(null)
-                .loginTime(null)
-                .message(message)
                 .build();
     }
 }
