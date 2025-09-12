@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
     indexes = {
         @Index(name = "idx_user_auth_user_id", columnList = "users_id"),
         @Index(name = "idx_user_auth_type", columnList = "auth_type"),
-        @Index(name = "idx_user_auth_last_used", columnList = "last_used")
+        @Index(name = "idx_user_auth_last_used", columnList = "last_used_at")
     })
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
