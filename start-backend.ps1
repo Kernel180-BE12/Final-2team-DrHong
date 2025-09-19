@@ -104,7 +104,27 @@ try {
     Write-Host "[ERROR] Redis 컨테이너 시작 실패: $_" -ForegroundColor Red
 }
 
-Write-Host "`n=== 3. 컨테이너 상태 확인 ===" -ForegroundColor Blue
+# SSH 터널이 안정화될 때까지 잠시 대기
+Write-Host "터널 연결 안정화 대기 중..." -ForegroundColor Yellow
+Start-Sleep -Seconds 3
+
+Write-Host "`n=== 3. Python-AI 컨테이너 시작 ===" -ForegroundColor Blue
+
+# Docker Compose를 통해 Python-AI 컨테이너 시작
+try {
+    Write-Host "Python-AI 컨테이너를 백그라운드에서 시작합니다..." -ForegroundColor Cyan
+    docker-compose up -d python-ai
+
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Python-AI 컨테이너가 성공적으로 시작되었습니다. (포트 8001)" -ForegroundColor Green
+    } else {
+        Write-Host "[WARNING] Python-AI 컨테이너 시작 중 문제가 발생했습니다." -ForegroundColor Yellow
+    }
+} catch {
+    Write-Host "[ERROR] Python-AI 컨테이너 시작 실패: $_" -ForegroundColor Red
+}
+
+Write-Host "`n=== 4. 컨테이너 상태 확인 ===" -ForegroundColor Blue
 try {
     docker-compose ps
 } catch {
@@ -115,4 +135,5 @@ Write-Host "`n=== 개발 환경 설정 완료 ===" -ForegroundColor Green
 Write-Host "다음 서비스가 사용 가능합니다:" -ForegroundColor Cyan
 Write-Host "- MySQL (RDS): localhost:3307" -ForegroundColor White
 Write-Host "- Redis (Docker): localhost:6379" -ForegroundColor White
+Write-Host "- Python-AI (Docker): localhost:8001" -ForegroundColor White
 Write-Host "`nSpring Boot 애플리케이션을 시작할 수 있습니다." -ForegroundColor Green

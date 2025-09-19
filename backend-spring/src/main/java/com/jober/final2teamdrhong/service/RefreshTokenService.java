@@ -224,20 +224,9 @@ public class RefreshTokenService {
     }
 
     /**
-     * 토큰 쌍 DTO
+     * 토큰 쌍 record DTO
      */
-    public static class TokenPair {
-        private final String accessToken;
-        private final String refreshToken;
-
-        public TokenPair(String accessToken, String refreshToken) {
-            this.accessToken = accessToken;
-            this.refreshToken = refreshToken;
-        }
-
-        public String getAccessToken() { return accessToken; }
-        public String getRefreshToken() { return refreshToken; }
-    }
+    public record TokenPair(String accessToken, String refreshToken) {}
     
     /**
      * JWT 토큰에서 사용자 ID를 Integer로 추출하는 helper 메서드

@@ -28,4 +28,23 @@ public class RecipientRequest {
         @Length(max = 1000, message = "메모는 1000자 이하로 입력해주세요.")
         private String recipientMemo;
     }
+
+    /**
+     * 수신자 정보 수정을 위한 요청 DTO 입니다.
+     */
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @Schema(name = "RecipientUpdateDTO")
+    public static class UpdateDTO {
+        @NotBlank(message = "수신인 이름은 필수 입력 항목입니다.")
+        @Length(min = 2, max = 10, message = "수신인 이름은 2자 이상 10자 이하로 입력해주세요.")
+        private String newRecipientName;
+        @NotBlank(message = "수신인 연락처는 필수 입력 항목입니다.")
+        private String newRecipientPhoneNumber;
+        @Length(max = 1000, message = "메모는 1000자 이하로 입력해주세요.")
+        private String newRecipientMemo;
+    }
 }

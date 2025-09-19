@@ -1,18 +1,7 @@
 package com.jober.final2teamdrhong.service;
 
-import com.jober.final2teamdrhong.config.AuthProperties;
-import com.jober.final2teamdrhong.config.JwtConfig;
-import com.jober.final2teamdrhong.dto.userLogin.UserLoginRequest;
-import com.jober.final2teamdrhong.dto.userLogin.UserLoginResponse;
-import com.jober.final2teamdrhong.dto.userSignup.UserSignupRequest;
 import com.jober.final2teamdrhong.entity.User;
-import com.jober.final2teamdrhong.entity.UserAuth;
-import com.jober.final2teamdrhong.exception.DuplicateResourceException;
-import com.jober.final2teamdrhong.exception.AuthenticationException;
-import com.jober.final2teamdrhong.exception.RateLimitExceededException;
 import com.jober.final2teamdrhong.repository.UserRepository;
-import com.jober.final2teamdrhong.service.storage.VerificationStorage;
-import com.jober.final2teamdrhong.util.TimingAttackProtection;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,304 +9,119 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
-import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class UserServiceTest {
 
     @Mock
-    private VerificationStorage verificationStorage;
-
-    @Mock
     private UserRepository userRepository;
-
-    @Mock
-    private PasswordEncoder passwordEncoder;
-
-    @Mock
-    private RateLimitService rateLimitService;
-
-    @Mock
-    private JwtConfig jwtConfig;
-
-    @Mock
-    private RefreshTokenService refreshTokenService;
-
-    @Mock
-    private AuthProperties authProperties;
-
-    @Mock
-    private TimingAttackProtection timingAttackProtection;
 
     @InjectMocks
     private UserService userService;
 
-    private UserSignupRequest validRequest;
-    private UserLoginRequest validLoginRequest;
+    private User mockUser;
+    private String testEmail = "test@example.com";
 
     @BeforeEach
     void setUp() {
-        validRequest = UserSignupRequest.builder()
-                .userName("테스트유저")
-                .email("test@example.com")
-                .password("Password123!")
-                .userNumber("010-1234-5678")
-                .verificationCode("123456")
-                .build();
-
-        validLoginRequest = UserLoginRequest.builder()
-                .email("test@example.com")
-                .password("Password123!")
-                .build();
+        mockUser = mock(User.class);
+        lenient().when(mockUser.getUserId()).thenReturn(1);
+        lenient().when(mockUser.getUserName()).thenReturn("테스트유저");
+        lenient().when(mockUser.getUserEmail()).thenReturn(testEmail);
+        lenient().when(mockUser.getUserNumber()).thenReturn("010-1234-5678");
+        lenient().when(mockUser.getUserRole()).thenReturn(User.UserRole.USER);
+        lenient().when(mockUser.getCreatedAt()).thenReturn(java.time.LocalDateTime.now());
+        lenient().when(mockUser.getUpdatedAt()).thenReturn(java.time.LocalDateTime.now());
+        lenient().when(mockUser.getUserAuths()).thenReturn(java.util.Collections.emptyList());
     }
 
     @Test
-    @DisplayName("성공: 유효한 데이터로 회원가입")
-    void signup_success() {
+    @DisplayName("성공: ID로 사용자 조회")
+    void findById_success() {
         // given
-        given(userRepository.findByUserEmail(anyString())).willReturn(Optional.empty());
-        given(verificationStorage.validateAndDelete(anyString(), anyString())).willReturn(true);
-        given(passwordEncoder.encode(anyString())).willReturn("encoded-password");
-        given(userRepository.save(any(User.class))).willReturn(createMockUser());
+        Integer userId = 1;
+        given(userRepository.findById(userId)).willReturn(Optional.of(mockUser));
 
         // when
-        userService.signup(validRequest);
+        Optional<User> result = userService.findById(userId);
 
         // then
-        then(userRepository).should().findByUserEmail("test@example.com");
-        then(rateLimitService).should().checkEmailVerifyRateLimit("test@example.com");
-        then(verificationStorage).should().validateAndDelete("test@example.com", "123456");
-        then(userRepository).should().save(any(User.class));
+        assertThat(result).isPresent();
+        assertThat(result.get()).isEqualTo(mockUser);
+        then(userRepository).should().findById(userId);
     }
 
     @Test
-    @DisplayName("실패: 중복된 이메일로 회원가입")
-    void signup_fail_duplicateEmail() {
+    @DisplayName("성공: 이메일로 사용자 조회")
+    void findByEmail_success() {
         // given
-        given(userRepository.findByUserEmail(anyString())).willReturn(Optional.of(createMockUser()));
-
-        // when & then
-        assertThatThrownBy(() -> userService.signup(validRequest))
-                .isInstanceOf(DuplicateResourceException.class)
-                .hasMessageContaining("이미 가입된 이메일입니다.");
-
-        then(verificationStorage).should(never()).validateAndDelete(anyString(), anyString());
-        then(userRepository).should(never()).save(any(User.class));
-    }
-
-    @Test
-    @DisplayName("실패: 인증 코드가 일치하지 않으면 예외 발생")
-    void signup_fail_invalidVerificationCode() {
-        // given
-        UserSignupRequest requestDto = UserSignupRequest.builder()
-                .userName("홍길동")
-                .email("test@example.com")
-                .userNumber("010-1234-5678")
-                .password("Test123!")
-                .verificationCode("999999")
-                .build();
-
-        given(userRepository.findByUserEmail("test@example.com")).willReturn(Optional.empty());
-        given(verificationStorage.validateAndDelete("test@example.com", "999999")).willReturn(false);
-
-        // when & then
-        assertThatThrownBy(() -> userService.signup(requestDto))
-                .isInstanceOf(AuthenticationException.class)
-                .hasMessage("인증 코드가 일치하지 않거나 만료되었습니다.");
-
-        then(userRepository).should(never()).save(any());
-    }
-
-    @Test
-    @DisplayName("실패: 인증 코드가 만료되었으면 예외 발생")
-    void signup_fail_expiredVerificationCode() {
-        // given
-        UserSignupRequest requestDto = UserSignupRequest.builder()
-                .userName("홍길동")
-                .email("test@example.com")
-                .userNumber("010-1234-5678")
-                .password("Test123!")
-                .verificationCode("123456")
-                .build();
-
-        given(userRepository.findByUserEmail("test@example.com")).willReturn(Optional.empty());
-        given(verificationStorage.validateAndDelete("test@example.com", "123456")).willReturn(false);
-
-        // when & then
-        assertThatThrownBy(() -> userService.signup(requestDto))
-                .isInstanceOf(AuthenticationException.class)
-                .hasMessage("인증 코드가 일치하지 않거나 만료되었습니다.");
-
-        then(userRepository).should(never()).save(any());
-    }
-
-
-    @Test
-    @DisplayName("성공: Rate limiting 통과 시 회원가입")
-    void signupWithRateLimit_success() {
-        // given
-        UserSignupRequest requestDto = UserSignupRequest.builder()
-                .userName("홍길동")
-                .email("test@example.com")
-                .userNumber("010-1234-5678")
-                .password("Test123!")
-                .verificationCode("123456")
-                .build();
-        String clientIp = "192.168.1.1";
-
-        given(userRepository.findByUserEmail("test@example.com")).willReturn(Optional.empty());
-        given(verificationStorage.validateAndDelete("test@example.com", "123456")).willReturn(true);
-        given(passwordEncoder.encode("Test123!")).willReturn("encoded_password");
-        given(userRepository.save(any(User.class))).willReturn(createMockUser());
+        given(userRepository.findByUserEmail(testEmail)).willReturn(Optional.of(mockUser));
 
         // when
-        userService.signupWithRateLimit(requestDto, clientIp);
+        Optional<User> result = userService.findByEmail(testEmail);
 
         // then
-        then(rateLimitService).should().checkSignupRateLimit(clientIp, "test@example.com");
-        then(userRepository).should().save(any(User.class));
+        assertThat(result).isPresent();
+        assertThat(result.get()).isEqualTo(mockUser);
+        then(userRepository).should().findByUserEmail(testEmail);
     }
 
     @Test
-    @DisplayName("실패: Rate limiting 초과 시 예외 발생")
-    void signupWithRateLimit_fail_rateLimitExceeded() {
+    @DisplayName("성공: 사용자 저장")
+    void saveUser_success() {
         // given
-        UserSignupRequest requestDto = UserSignupRequest.builder()
-                .userName("홍길동")
-                .email("test@example.com")
-                .userNumber("010-1234-5678")
-                .password("Test123!")
-                .verificationCode("123456")
-                .build();
-        String clientIp = "192.168.1.1";
-
-        willThrow(new RateLimitExceededException("회원가입 속도 제한을 초과했습니다. 3600초 후 다시 시도해주세요.", 3600L))
-                .given(rateLimitService).checkSignupRateLimit(clientIp, "test@example.com");
-
-        // when & then
-        assertThatThrownBy(() -> userService.signupWithRateLimit(requestDto, clientIp))
-                .isInstanceOf(RateLimitExceededException.class)
-                .hasMessage("회원가입 속도 제한을 초과했습니다. 3600초 후 다시 시도해주세요.");
-
-        then(userRepository).should(never()).save(any());
-    }
-
-    @Test
-    @DisplayName("성공: 유효한 로그인 정보로 로그인")
-    void loginWithRefreshToken_success() {
-        // given
-        String clientIp = "192.168.1.1";
-        User mockUser = createMockUserWithAuth();
-
-        given(userRepository.findByUserEmailWithAuth("test@example.com")).willReturn(Optional.of(mockUser));
-        given(passwordEncoder.matches("Password123!", "encoded-password")).willReturn(true);
-        given(jwtConfig.generateAccessToken("test@example.com", mockUser.getUserId())).willReturn("access-token");
-        given(refreshTokenService.createRefreshToken(mockUser, clientIp)).willReturn("refresh-token");
         given(userRepository.save(mockUser)).willReturn(mockUser);
 
         // when
-        UserLoginResponse response = userService.loginWithRefreshToken(validLoginRequest, clientIp);
+        User result = userService.saveUser(mockUser);
 
         // then
-        then(userRepository).should().findByUserEmailWithAuth("test@example.com");
-        then(passwordEncoder).should().matches("Password123!", "encoded-password");
-        then(jwtConfig).should().generateAccessToken("test@example.com", mockUser.getUserId());
-        then(refreshTokenService).should().createRefreshToken(mockUser, clientIp);
+        assertThat(result).isEqualTo(mockUser);
         then(userRepository).should().save(mockUser);
-        then(timingAttackProtection).should().startTiming();
-        then(timingAttackProtection).should().clear();
-
-        // response 검증
-        assertThat(response).isNotNull();
-        assertThat(response.isSuccess()).isTrue();
-        assertThat(response.getToken()).isEqualTo("access-token");
-        assertThat(response.getRefreshToken()).isEqualTo("refresh-token");
     }
 
     @Test
-    @DisplayName("실패: 잘못된 비밀번호로 로그인")
-    void loginWithRefreshToken_fail_wrongPassword() {
+    @DisplayName("성공: 사용자 삭제")
+    void deleteUser_success() {
         // given
-        String clientIp = "192.168.1.1";
-        User mockUser = createMockUserWithAuth();
+        Integer userId = 1;
 
-        given(userRepository.findByUserEmailWithAuth("test@example.com")).willReturn(Optional.of(mockUser));
-        given(passwordEncoder.matches("Password123!", "encoded-password")).willReturn(false);
+        // when
+        userService.deleteUser(userId);
 
-        AuthProperties.Security securityProps = mock(AuthProperties.Security.class);
-        AuthProperties.Messages messagesProps = mock(AuthProperties.Messages.class);
-        given(authProperties.getSecurity()).willReturn(securityProps);
-        given(authProperties.getMessages()).willReturn(messagesProps);
-        given(securityProps.getDummyHash()).willReturn("dummy-hash");
-        given(securityProps.getMinResponseTimeMs()).willReturn(500);
-        given(messagesProps.getInvalidCredentials()).willReturn("Invalid credentials");
-
-        // when & then
-        assertThatThrownBy(() -> userService.loginWithRefreshToken(validLoginRequest, clientIp))
-                .isInstanceOf(BadCredentialsException.class)
-                .hasMessage("Invalid credentials");
-
-        then(timingAttackProtection).should().startTiming();
-        then(timingAttackProtection).should().ensureMinimumResponseTime(500L);
-        then(timingAttackProtection).should().clear();
-        then(userRepository).should(never()).save(any());
+        // then
+        then(userRepository).should().deleteById(userId);
     }
 
     @Test
-    @DisplayName("실패: 존재하지 않는 사용자로 로그인")
-    void loginWithRefreshToken_fail_userNotFound() {
+    @DisplayName("성공: 모든 사용자 조회 (페이징)")
+    void findAllUsers_success() {
         // given
-        String clientIp = "192.168.1.1";
+        Pageable pageable = PageRequest.of(0, 10);
+        Page<User> expectedPage = new PageImpl<>(List.of(mockUser), pageable, 1);
+        given(userRepository.findAll(pageable)).willReturn(expectedPage);
 
-        given(userRepository.findByUserEmailWithAuth("test@example.com")).willReturn(Optional.empty());
-        given(passwordEncoder.matches("Password123!", "dummy-hash")).willReturn(false);
+        // when
+        Page<User> result = userService.findAllUsers(pageable);
 
-        AuthProperties.Security securityProps = mock(AuthProperties.Security.class);
-        AuthProperties.Messages messagesProps = mock(AuthProperties.Messages.class);
-        given(authProperties.getSecurity()).willReturn(securityProps);
-        given(authProperties.getMessages()).willReturn(messagesProps);
-        given(securityProps.getDummyHash()).willReturn("dummy-hash");
-        given(securityProps.getMinResponseTimeMs()).willReturn(500);
-        given(messagesProps.getInvalidCredentials()).willReturn("Invalid credentials");
-
-        // when & then
-        assertThatThrownBy(() -> userService.loginWithRefreshToken(validLoginRequest, clientIp))
-                .isInstanceOf(BadCredentialsException.class)
-                .hasMessage("Invalid credentials");
-
-        then(timingAttackProtection).should().startTiming();
-        then(timingAttackProtection).should().ensureMinimumResponseTime(500L);
-        then(timingAttackProtection).should().clear();
-        then(userRepository).should(never()).save(any());
-    }
-
-    private User createMockUser() {
-        return User.create("테스트유저", "test@example.com", "010-1234-5678");
-    }
-
-    private User createMockUserWithAuth() {
-        User user = User.create("테스트유저", "test@example.com", "010-1234-5678");
-        UserAuth userAuth = UserAuth.builder()
-                .user(user)
-                .authType(UserAuth.AuthType.LOCAL)
-                .passwordHash("encoded-password")
-                .isVerified(true)
-                .build();
-        user.addUserAuth(userAuth);
-        return user;
+        // then
+        assertThat(result).isEqualTo(expectedPage);
+        assertThat(result.getContent()).hasSize(1);
+        then(userRepository).should().findAll(pageable);
     }
 }

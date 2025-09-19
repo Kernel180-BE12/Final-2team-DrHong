@@ -162,8 +162,8 @@ class RefreshTokenServiceTest {
         RefreshTokenService.TokenPair tokenPair = refreshTokenService.refreshTokens(oldRefreshToken, testClientIp);
 
         // then
-        assertThat(tokenPair.getAccessToken()).isEqualTo(newAccessToken);
-        assertThat(tokenPair.getRefreshToken()).isEqualTo(newRefreshToken);
+        assertThat(tokenPair.accessToken()).isEqualTo(newAccessToken);
+        assertThat(tokenPair.refreshToken()).isEqualTo(newRefreshToken);
 
         // 기존 토큰 무효화 검증
         verify(redisTemplate).delete("refresh_token:" + oldTokenHash);

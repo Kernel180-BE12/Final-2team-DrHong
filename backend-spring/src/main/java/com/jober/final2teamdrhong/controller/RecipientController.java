@@ -103,4 +103,75 @@ public class RecipientController {
 
         return ResponseEntity.status(HttpStatus.OK).body(recipientPage);
     }
+
+    /**
+     * 특정 워크스페이스에 속한 수신자 정보를 수정하는 API
+     * <p>
+     * 요청한 사용자가 해당 워크스페이스에 대한 접근 권한이 있는지 확인 후,
+     * URL 경로의 recipientId에 해당하는 수신자 정보를 요청 본문의 데이터로 업데이트합니다.
+     *
+     * @param updateDTO   수신자 수정을 위한 데이터 (JSON, @Valid로 검증됨)
+     * @param workspaceId 수정할 수신자가 속한 워크스페이스의 ID
+     * @param recipientId 수정할 수신자의 ID
+     * @param jwtClaims {@link AuthenticationPrincipal}을 통해 SecurityContext에서 직접 주입받는 현재 로그인된 사용자의 JWT 정보 객체
+     * @return 상태 코드 200 (OK)와 함께 수정된 수신자의 정보를 담은 ResponseEntity
+     */
+    @Operation(summary = "수신자 정보 수정", description = "특정 수신자의 이름, 연락처, 메모를 수정합니다.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "수신자 정보 수정 성공",
+                    content = @Content(mediaType = "application/json",
+                    schema = @Schema(implementation = RecipientResponse.SimpleDTO.class))),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청: 요청 데이터 유효성 검사 실패 또는 존재하지 않는 리소스(워크스페이스, 수신자)",
+                    content = @Content(mediaType = "application/json",
+                    schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "401", description = "인증 실패 (로그인 필요)",
+                    content = @Content(mediaType = "application/json",
+                    schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @SecurityRequirement(name = "bearerAuth")
+    @PutMapping("/{recipientId}")
+    public ResponseEntity<RecipientResponse.SimpleDTO> updateRecipient(@Valid @RequestBody RecipientRequest.UpdateDTO updateDTO,
+                                                                       @PathVariable Integer workspaceId,
+                                                                       @PathVariable Integer recipientId,
+                                                                       @AuthenticationPrincipal JwtClaims jwtClaims) {
+        Integer currentUserId = jwtClaims.getUserId();
+        RecipientResponse.SimpleDTO updatedRecipient = recipientService.updateRecipient(updateDTO, workspaceId, recipientId, currentUserId);
+
+        return ResponseEntity.status(HttpStatus.OK).body(updatedRecipient);
+    }
+
+    /**
+     * 특정 워크스페이스에 속한 수신자를 삭제하는 API (소프트 딜리트)
+     * <p>
+     * 요청한 사용자가 해당 워크스페이스에 대한 접근 권한이 있는지 확인 후,
+     * URL 경로의 recipientId에 해당하는 수신자의 is_deleted 플래그를 true로 변경합니다.
+     *
+     * @param workspaceId 삭제할 수신자가 속한 워크스페이스의 ID
+     * @param recipientId 삭제할 수신자의 ID
+     * @param jwtClaims {@link AuthenticationPrincipal}을 통해 SecurityContext에서 직접 주입받는 현재 로그인된 사용자의 JWT 정보 객체
+     * @return 상태 코드 200 (OK)와 함께 삭제 처리된 수신자의 정보를 담은 ResponseEntity
+     */
+    @Operation(summary = "수신자 삭제", description = "특정 워크스페이스에 속한 수신자를 삭제합니다.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "수신자 삭제 성공",
+                    content = @Content(mediaType = "application/json",
+                    schema = @Schema(implementation = RecipientResponse.SimpleDTO.class))),
+            @ApiResponse(responseCode = "400", description = "잘못된 요청: 존재하지 않거나 권한 없는 워크스페이스, " +
+                    "또는 해당 워크스페이스에 속하지 않는 수신자에 접근 시 발생",
+                    content = @Content(mediaType = "application/json",
+                    schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "401", description = "인증 실패 (로그인 필요)",
+                    content = @Content(mediaType = "application/json",
+                    schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @SecurityRequirement(name = "bearerAuth")
+    @DeleteMapping("/{recipientId}")
+    public ResponseEntity<RecipientResponse.SimpleDTO> deleteRecipient(@PathVariable Integer workspaceId,
+                                                                       @PathVariable Integer recipientId,
+                                                                       @AuthenticationPrincipal JwtClaims jwtClaims) {
+        Integer currentUserId = jwtClaims.getUserId();
+        RecipientResponse.SimpleDTO deletedRecipient = recipientService.deleteRecipient(workspaceId, recipientId, currentUserId);
+
+        return ResponseEntity.status(HttpStatus.OK).body(deletedRecipient);
+    }
 }

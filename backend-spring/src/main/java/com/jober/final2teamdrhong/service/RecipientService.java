@@ -5,6 +5,7 @@ import com.jober.final2teamdrhong.dto.recipient.RecipientResponse;
 import com.jober.final2teamdrhong.entity.Recipient;
 import com.jober.final2teamdrhong.entity.Workspace;
 import com.jober.final2teamdrhong.repository.RecipientRepository;
+import com.jober.final2teamdrhong.service.validator.RecipientValidator;
 import com.jober.final2teamdrhong.service.validator.WorkspaceValidator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -21,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class RecipientService {
 
     private final RecipientRepository recipientRepository;
+    private final RecipientValidator recipientValidator;
     private final WorkspaceValidator workspaceValidator;
 
     /**
@@ -69,5 +71,71 @@ public class RecipientService {
         Page<Recipient> recipientPage = recipientRepository.findAllByWorkspace_WorkspaceId(workspaceId, pageable);
 
         return recipientPage.map(RecipientResponse.SimpleDTO::new);
+    }
+
+    /**
+     * 특정 수신자의 정보를 수정합니다.
+     * <p>
+     * 이 메소드는 다음의 순서로 동작합니다:
+     * <ol>
+     *     <li>요청한 사용자가 대상 워크스페이스에 대한 접근 권한이 있는지 확인합니다.</li>
+     *     <li>수정하려는 수신자가 해당 워크스페이스에 실제로 속해 있는지 검증합니다.</li>
+     *     <li>검증이 완료되면, DTO로부터 받은 새로운 정보로 수신자 엔티티의 상태를 변경합니다.</li>
+     * </ol>
+     * 메소드에 {@link Transactional} 어노테이션이 적용되어 있어,
+     * 메소드 종료 시 변경된 엔티티 정보(Dirty Checking)가 데이터베이스에 자동으로 반영됩니다.
+     *
+     * @param updateDTO   수신자 수정을 위한 새로운 데이터
+     * @param workspaceId 수정할 수신자가 속한 워크스페이스의 ID
+     * @param recipientId 수정할 수신자의 ID
+     * @param userId      요청을 보낸 사용자의 ID (인가에 사용)
+     * @return 수정된 수신자의 정보가 담긴 {@link RecipientResponse.SimpleDTO}
+     * @throws IllegalArgumentException 워크스페이스나 수신자를 찾을 수 없거나, 사용자가 접근 권한이 없을 경우 발생
+     */
+    @Transactional
+    public RecipientResponse.SimpleDTO updateRecipient(RecipientRequest.UpdateDTO updateDTO,
+                                                       Integer workspaceId, Integer recipientId, Integer userId) {
+        // 1. 워크스페이스 접근 권한 확인
+        workspaceValidator.validateAndGetWorkspace(workspaceId, userId);
+
+        // 2. 수신자 조회 (워크스페이스 소속인지 함께 검증)
+        Recipient existingRecipient = recipientValidator.validateAndGetRecipient(workspaceId, recipientId);
+
+        // 3. 정보 업데이트
+        existingRecipient.setRecipientName(updateDTO.getNewRecipientName());
+        existingRecipient.setRecipientPhoneNumber(updateDTO.getNewRecipientPhoneNumber());
+        existingRecipient.setRecipientMemo(updateDTO.getNewRecipientMemo());
+        existingRecipient.update();
+
+        return new RecipientResponse.SimpleDTO(existingRecipient);
+    }
+
+    /**
+     * 특정 수신자를 삭제합니다 (소프트 딜리트).
+     * <p>
+     * 요청한 사용자가 해당 워크스페이스의 소유자인지 확인하는 인가 과정이 포함되며,
+     * 실제 데이터베이스에서 삭제되지 않고 is_deleted 플래그를 true로 변경하고 deleted_at에 현재 시간을 설정합니다.
+     * <p>
+     * JPA의 Dirty Checking 기능을 통해 변경사항이 자동으로 데이터베이스에 UPDATE됩니다.
+     *
+     * @param workspaceId 삭제할 수신자가 속한 워크스페이스의 ID
+     * @param recipientId 삭제할 수신자의 ID
+     * @param userId      삭제를 요청한 사용자의 ID (인가에 사용)
+     * @return 삭제 처리된 수신자의 정보가 담긴 {@link RecipientResponse.SimpleDTO}
+     * @throws IllegalArgumentException 해당 워크스페이스가 존재하지 않거나, 사용자가 접근 권한이 없거나,
+     *                                  수신자가 해당 워크스페이스에 존재하지 않을 경우 발생
+     */
+    @Transactional
+    public RecipientResponse.SimpleDTO deleteRecipient(Integer workspaceId, Integer recipientId, Integer userId) {
+        // 1. 워크스페이스 접근 권한 확인
+        workspaceValidator.validateAndGetWorkspace(workspaceId, userId);
+
+        // 2. 수신자 조회 (워크스페이스 소속인지 함께 검증)
+        Recipient existingRecipient = recipientValidator.validateAndGetRecipient(workspaceId, recipientId);
+
+        // 3. 소프트 딜리트 처리
+        existingRecipient.softDelete();
+
+        return new RecipientResponse.SimpleDTO(existingRecipient);
     }
 }

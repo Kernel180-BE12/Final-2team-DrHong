@@ -8,6 +8,7 @@ import com.jober.final2teamdrhong.entity.Workspace;
 import com.jober.final2teamdrhong.repository.RecipientRepository;
 import com.jober.final2teamdrhong.repository.UserRepository;
 import com.jober.final2teamdrhong.repository.WorkspaceRepository;
+import jakarta.persistence.EntityManager;
 import com.jober.final2teamdrhong.util.test.WithMockJwtClaims;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -21,10 +22,11 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.hamcrest.Matchers.*;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -48,6 +50,9 @@ class RecipientControllerTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private EntityManager entityManager;
 
     private User testUser;
     private Workspace testWorkspace;
@@ -239,6 +244,153 @@ class RecipientControllerTest {
         ResultActions resultActions = mockMvc.perform(
                 get("/workspaces/" + unauthorizedWorkspaceId + "/recipients")
                         .accept(MediaType.APPLICATION_JSON)
+        );
+
+        // then
+        // 1. 서비스 계층의 인가 로직에서 예외를 던지고, GlobalExceptionHandler에 의해
+        //    최종적으로 HTTP 상태 코드 400 Bad Request가 반환되는지 확인합니다.
+        resultActions.andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("수신자 정보 수정 성공 테스트")
+    @WithMockJwtClaims(userId = 1)
+    void updateRecipient_Success_Test() throws Exception {
+        // given
+        // 1. DB에 수정 대상이 될 원본 수신자 데이터를 미리 저장합니다.
+        Recipient savedRecipient = recipientRepository.save(Recipient.builder()
+                .recipientName("홍길동")
+                .recipientPhoneNumber("010-1111-2222")
+                .workspace(testWorkspace)
+                .build());
+        // 1-1. 수정 전의 updatedAt 값을 저장해둡니다.
+        String originalUpdatedAt = savedRecipient.getUpdatedAt().toString();
+
+        // 2. API 요청 본문에 담아 보낼 수정용 DTO 객체를 생성합니다.
+        RecipientRequest.UpdateDTO updateDTO = RecipientRequest.UpdateDTO.builder()
+                .newRecipientName("김길동")
+                .newRecipientPhoneNumber("010-9999-8888")
+                .newRecipientMemo("수정된 메모")
+                .build();
+
+        // 3. DTO 객체를 JSON 문자열로 변환합니다.
+        String requestBody = objectMapper.writeValueAsString(updateDTO);
+
+        // when
+        // 1. MockMvc를 사용하여 PUT /workspaces/{workspaceId}/recipients/{recipientId} 엔드포인트로 API 요청을 보냅니다.
+        ResultActions resultActions = mockMvc.perform(
+                put("/workspaces/" + testWorkspace.getWorkspaceId() + "/recipients/" +
+                        savedRecipient.getRecipientId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody)
+        );
+
+        // then
+        // 1. API 호출 결과를 검증합니다.
+        resultActions
+                // 1-1. HTTP 상태 코드가 200 OK 인지 확인합니다.
+                .andExpect(status().isOk())
+                // 1-2. 응답 JSON의 recipientId가 수정한 ID와 일치하는지 확인합니다.
+                .andExpect(jsonPath("$.recipientId").value(savedRecipient.getRecipientId()))
+                // 1-3. 응답 JSON의 recipientName이 수정한 값으로 변경되었는지 확인합니다.
+                .andExpect(jsonPath("$.recipientName").value("김길동"))
+                // 1-4. 응답 JSON의 recipientPhoneNumber가 수정한 값으로 변경되었는지 확인합니다.
+                .andExpect(jsonPath("$.recipientPhoneNumber").value("010-9999-8888"))
+                // 1-5. 응답 JSON의 updatedAt 값이 원본 값과 다른지 (즉, 갱신되었는지) 확인합니다.
+                .andExpect(jsonPath("$.updatedAt").value(not(originalUpdatedAt)));
+    }
+
+    @Test
+    @DisplayName("수신자 정보 수정 실패 테스트 - 필수 필드 누락")
+    @WithMockJwtClaims(userId = 1)
+    void updateRecipient_Fail_Validation_Test() throws Exception {
+        // given
+        // 1. DB에 수정 대상 데이터를 미리 저장합니다.
+        Recipient savedRecipient = recipientRepository.save(Recipient.builder()
+                .recipientName("홍길동")
+                .recipientPhoneNumber("010-1111-2222")
+                .workspace(testWorkspace)
+                .build());
+
+        // 2. DTO의 @NotBlank 제약조건을 위반하는, 비어있는 newRecipientName을 가진 DTO를 준비합니다.
+        RecipientRequest.UpdateDTO updateDTO = RecipientRequest.UpdateDTO.builder()
+                .newRecipientName("") // @NotBlank 위반
+                .newRecipientPhoneNumber("010-9999-8888")
+                .build();
+
+        String requestBody = objectMapper.writeValueAsString(updateDTO);
+
+        // when
+        // 1. 유효하지 않은 데이터로 수정 API를 호출합니다.
+        ResultActions resultActions = mockMvc.perform(
+                put("/workspaces/" + testWorkspace.getWorkspaceId() + "/recipients/" +
+                        savedRecipient.getRecipientId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody)
+        );
+
+        // then
+        // 1. 컨트롤러의 @Valid 어노테이션에 의해 요청이 차단되고,
+        //    HTTP 상태 코드 400 Bad Request가 반환되는지 확인합니다.
+        resultActions.andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("수신자 삭제 성공 테스트")
+    @WithMockJwtClaims(userId = 1)
+    void deleteRecipient_Success_Test() throws Exception {
+        // given
+        // 1. DB에 삭제 대상이 될 수신자 데이터를 미리 저장합니다.
+        Recipient savedRecipient = recipientRepository.save(Recipient.builder()
+                .recipientName("홍길동")
+                .recipientPhoneNumber("010-1111-2222")
+                .workspace(testWorkspace)
+                .build());
+
+        // when
+        // 1. MockMvc를 사용하여 DELETE /workspaces/{workspaceId}/recipients/{recipientId} 엔드포인트로 API 요청을 보냅니다.
+        ResultActions resultActions = mockMvc.perform(
+                delete("/workspaces/" + testWorkspace.getWorkspaceId() + "/recipients/" +
+                        savedRecipient.getRecipientId())
+        );
+
+        // then
+        // 1. API 호출 결과를 검증합니다.
+        resultActions
+                // 1-1. HTTP 상태 코드가 200 OK 인지 확인합니다.
+                .andExpect(status().isOk())
+                // 1-2. 응답 JSON의 recipientId가 삭제한 ID와 일치하는지 확인합니다.
+                .andExpect(jsonPath("$.recipientId").value(savedRecipient.getRecipientId()))
+                // 1-3. 응답 JSON의 deletedAt 필드가 null이 아닌 값으로 채워져 있는지 확인합니다.
+                .andExpect(jsonPath("$.deletedAt").isNotEmpty());
+
+        // 2. (중요) DB에서 실제로 소프트 딜리트되었는지 확인합니다.
+        //    영속성 컨텍스트의 1차 캐시를 비워 DB에서 직접 조회하도록 강제합니다.
+        entityManager.flush();
+        entityManager.clear();
+        //    @SQLRestriction("is_deleted = false") 때문에, 삭제된 엔티티는 findById로 조회되지 않아야 합니다.
+        assertFalse(recipientRepository.findById(savedRecipient.getRecipientId()).isPresent());
+    }
+
+    @Test
+    @DisplayName("수신자 삭제 실패 테스트 - 권한 없음")
+    @WithMockJwtClaims(userId = 1)
+    void deleteRecipient_Fail_UnauthorizedWorkspace_Test() throws Exception {
+        // given
+        // 1. DB에 테스트용 수신자를 저장합니다.
+        Recipient savedRecipient = recipientRepository.save(Recipient.builder()
+                .recipientName("홍길동")
+                .recipientPhoneNumber("010-1111-2222")
+                .workspace(testWorkspace)
+                .build());
+        // 2. 존재하지 않거나 내 소유가 아닌 워크스페이스 ID를 임의로 준비합니다.
+        Integer unauthorizedWorkspaceId = 999;
+
+        // when
+        // 1. 다른 사람의 워크스페이스에 속한 수신자를 삭제하려는 API를 호출합니다.
+        ResultActions resultActions = mockMvc.perform(
+                delete("/workspaces/" + unauthorizedWorkspaceId + "/recipients/" +
+                        savedRecipient.getRecipientId())
         );
 
         // then

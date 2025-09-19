@@ -104,4 +104,55 @@ class RecipientRepositoryTest {
         assertThat(recipientPage.getContent()).extracting(Recipient::getRecipientName)
                 .containsExactly("임꺽정", "홍길동");
     }
+
+    @Test
+    @DisplayName("수신자 ID와 워크스페이스 ID로 수신자 조회 성공 테스트")
+    void findByRecipientIdAndWorkspace_WorkspaceId_Success_Test() {
+        // given
+        // 1. 테스트 데이터 준비: BeforeEach에서 이미 "홍길동" 수신자가 testWorkspace에 저장되어 있습니다.
+        //    정확한 ID를 알기 위해 먼저 해당 수신자를 조회합니다.
+        Recipient targetRecipient = entityManager.getEntityManager()
+                .createQuery("SELECT r FROM Recipient r WHERE r.recipientName = :name", Recipient.class)
+                .setParameter("name", "홍길동")
+                .getSingleResult();
+
+        // when
+        // 1. 테스트하려는 쿼리 메소드를 올바른 ID로 호출합니다.
+        java.util.Optional<Recipient> foundRecipientOpt =
+                recipientRepository.findByRecipientIdAndWorkspace_WorkspaceId(
+                        targetRecipient.getRecipientId(),
+                        testWorkspace.getWorkspaceId()
+                );
+
+        // then
+        // 1. Optional 객체가 비어있지 않은지 확인합니다. (조회 성공)
+        assertThat(foundRecipientOpt).isPresent();
+        // 2. 조회된 Recipient 객체의 ID와 이름이 예상과 일치하는지 확인합니다.
+        assertThat(foundRecipientOpt.get().getRecipientId()).isEqualTo(targetRecipient.getRecipientId());
+        assertThat(foundRecipientOpt.get().getRecipientName()).isEqualTo("홍길동");
+    }
+
+    @Test
+    @DisplayName("수신자 ID와 워크스페이스 ID로 수신자 조회 실패 테스트 - 워크스페이스 불일치")
+    void findByRecipientIdAndWorkspace_WorkspaceId_Fail_WorkspaceMismatch_Test() {
+        // given
+        // 1. 테스트 데이터 준비: "홍길동" 수신자의 ID를 가져옵니다.
+        Recipient targetRecipient = entityManager.getEntityManager()
+                .createQuery("SELECT r FROM Recipient r WHERE r.recipientName = :name", Recipient.class)
+                .setParameter("name", "홍길동")
+                .getSingleResult();
+
+        // when
+        // 1. 테스트하려는 쿼리 메소드를 호출하되,
+        //    "홍길동" 수신자가 속하지 않은 'anotherWorkspace'의 ID로 조회합니다.
+        java.util.Optional<Recipient> foundRecipientOpt =
+                recipientRepository.findByRecipientIdAndWorkspace_WorkspaceId(
+                        targetRecipient.getRecipientId(),
+                        anotherWorkspace.getWorkspaceId() // 일부러 다른 워크스페이스 ID 사용
+                );
+
+        // then
+        // 1. Optional 객체가 비어있는지 확인합니다. (조회 실패)
+        assertThat(foundRecipientOpt).isNotPresent();
+    }
 }

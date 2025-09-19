@@ -80,3 +80,6 @@ frontend/yarn-error.log*
 
 # 루트 빌드
 /build
+
+# Local Docker environment overrides
+docker-compose.override.yml
