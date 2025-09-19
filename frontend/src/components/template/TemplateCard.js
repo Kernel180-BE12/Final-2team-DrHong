@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { Card, Box, Typography, Button, CardContent } from '@mui/material';
 
-export default function TemplateCard({ template }) {
+export default function TemplateCard({ template, isPublic = false }) { // isPublic prop 추가
     // 상태에 따른 스타일을 정의합니다.
     const statusStyles = {
         '심사중': { bgcolor: '#e3f2fd', color: '#1565c0' },
@@ -22,7 +22,7 @@ export default function TemplateCard({ template }) {
             }}
         >
             <Box sx={{ p: 1, borderBottom: '1px solid #ccc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="h6" fontWeight="bold">{template.title}</Typography>
+                <Typography variant="h6" fontWeight="bold">{template.publicTemplateTitle}</Typography>
                 <Box>
                     <Button size="small" variant="text" sx={{ color: 'black', minWidth: 'auto', p: 0.5 }}>즐겨찾기</Button>
                     <Button size="small" variant="text" sx={{ color: 'black', minWidth: 'auto', p: 0.5 }}>공유</Button>
@@ -30,11 +30,22 @@ export default function TemplateCard({ template }) {
                 </Box>
             </Box>
             <CardContent sx={{ wordBreak: 'break-word', bgcolor: '#f8f9fa' }}>
-                <Typography color="text.secondary">{template.content}</Typography>
+                <Typography color="text.secondary">{template.publicTemplateContent}</Typography>
             </CardContent>
-            <Box sx={{ p: 1.5, textAlign: 'center', ...statusStyles[template.status] }}>
-                <Typography variant="body2" fontWeight="bold">{template.status}</Typography>
-            </Box>
+
+            {/* buttonTitle은 항상 content 아래에 위치하며, 값이 있을 때만 렌더링 */}
+            {template.buttonTitle && (
+                <Box sx={{ p: 1.5, textAlign: 'center', bgcolor: '#e3f2fd', color: '#1565c0' }}>
+                    <Typography variant="body2" fontWeight="bold">{template.buttonTitle}</Typography>
+                </Box>
+            )}
+
+            {/* 개인 템플릿일 경우 (isPublic이 false일 경우) buttonTitle 아래에 status 렌더링 */}
+            {!isPublic && template.status && (
+                <Box sx={{ p: 1.5, textAlign: 'center', ...statusStyles[template.status] }}>
+                    <Typography variant="body2" fontWeight="bold">{template.status}</Typography>
+                </Box>
+            )}
         </Card>
     );
 }
