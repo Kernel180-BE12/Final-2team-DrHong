@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom'; // useNavigate 임포트
 import {Link, Grid, Box, Divider, Typography} from '@mui/material';
 import FormLayout from '../components/layout/FormLayout';
 import CommonTextField from '../components/form/CommonTextField';
 import CommonButton from '../components/button/CommonButton';
-import FindPassword from "./FindPassword";
-
+import FindPassword from './FindPassword';
+import axios from 'axios'; // axios 임포트
 
 const Login = () => {
     const [formValues, setFormValues] = useState({
@@ -16,6 +16,8 @@ const Login = () => {
     const [emailHelperText, setEmailHelperText] = useState('');
 
     const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+    const navigate = useNavigate(); // useNavigate 훅 초기화
 
     const validateEmail = (email) => {
         if (!email) {
@@ -45,13 +47,32 @@ const Login = () => {
         }
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => { // async 키워드 추가
         e.preventDefault();
         const isEmailValid = validateEmail(formValues.email);
 
         if (isEmailValid) {
             console.log('로그인 시도:', formValues);
-            // 여기에 백엔드로 데이터를 전송하는 로그인 로직을 구현합니다.
+            try {
+                const response = await axios.post('http://localhost:8080/api/auth/login', {
+                    email: formValues.email,
+                    password: formValues.password,
+                });
+
+                const { token, refreshToken } = response.data; // token으로 필드명 수정
+
+                localStorage.setItem('accessToken', token); // token 값을 accessToken 키로 저장
+                localStorage.setItem('refreshToken', refreshToken);
+
+                console.log('로그인 성공!', response.data);
+                alert('로그인 성공!'); // 임시 알림
+
+                navigate('/publicTemplate'); // 공개 템플릿 페이지로 리다이렉션
+
+            } catch (error) {
+                console.error('로그인 실패:', error.response ? error.response.data : error.message);
+                alert('로그인 실패: ' + (error.response ? error.response.data.message : error.message)); // 임시 에러 알림
+            }
         } else {
             console.log('유효성 검사 실패');
         }
