@@ -1,3 +1,4 @@
+from pathlib import Path
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, AutoModelForSequenceClassification
 from peft import PeftModel
 import torch
@@ -8,13 +9,19 @@ import gc
 import logging
 log = logging.getLogger("uvicorn")
 
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
 class ModelLoader:
     GEN_MODEL_ID = "MLP-KTLim/llama-3-Korean-Bllossom-8B"
     CLS_MODEL_ID = "klue/bert-base"
-    GEN_MODEL_PATH = GEN_MODEL_ID.replace("/", "--")
-    CLS_MODEL_PATH = CLS_MODEL_ID.replace("/", "--")
-    DOWNLOADED_PATH = "../models/downloaded_model/"
-    FINETUNED_PATH = "../models/finetuned_model/"
+
+    # 경로를 절대 경로로 재정의
+    DOWNLOADED_PATH = BASE_DIR / "app/models/downloaded_model/"
+    FINETUNED_PATH = BASE_DIR / "app/models/finetuned_model/"
+
+    GEN_MODEL_PATH = DOWNLOADED_PATH / GEN_MODEL_ID.replace("/", "--")
+    CLS_DOWNLOADED_PATH = DOWNLOADED_PATH / CLS_MODEL_ID.replace("/", "--")
+    CLS_FINETUNED_PATH = FINETUNED_PATH / CLS_MODEL_ID.replace("/", "--")
 
     models = {}
 
@@ -51,11 +58,11 @@ class ModelLoader:
     def load_gen_model(cls):
         """서버 구동시에 호출할 템플릿 생성 모델을 메모리로 로드하는 함수"""
 
-        cls.download_gen_model()
+        #cls.download_gen_model()
 
         if "gen" not in cls.models or cls.models["gen"] is None:
-            base_model_path = cls.DOWNLOADED_PATH + cls.GEN_MODEL_PATH
-            lora_adapter_path = cls.FINETUNED_PATH + cls.GEN_MODEL_PATH
+            base_model_path = cls.GEN_MODEL_PATH
+            lora_adapter_path = cls.FINETUNED_PATH / cls.GEN_MODEL_ID.replace("/", "--")
 
             bnb_config = BitsAndBytesConfig(
                 load_in_8bit=True,
@@ -98,11 +105,11 @@ class ModelLoader:
     def load_cls_model(cls):
         """서버 구동시에 호출할 템플릿 검증 모델을 메모리로 로드하는 함수"""
 
-        cls.download_cls_model()
+        #cls.download_cls_model()
 
         if "cls" not in cls.models or cls.models["cls"] is None:
-            base_model_path = cls.DOWNLOADED_PATH + cls.CLS_MODEL_PATH
-            finetuned_model_path = cls.FINETUNED_PATH + cls.CLS_MODEL_PATH
+            base_model_path = cls.CLS_DOWNLOADED_PATH
+            finetuned_model_path = cls.CLS_FINETUNED_PATH
 
             tokenizer = AutoTokenizer.from_pretrained(base_model_path)
             model = AutoModelForSequenceClassification.from_pretrained(finetuned_model_path)

@@ -1,3 +1,6 @@
+import re
+import json
+import ast
 from langchain_core.tools import tool, ToolException
 
 from typing import Annotated, List
@@ -34,21 +37,42 @@ def parse_template_from_generative_model_output(
     ]
 ) -> Template:
     """
-    Parses a JSON object from the raw output of a generative model and validates it against the Template Pydantic class.
-    This tool is useful for extracting structured data when the model's output is not a pure JSON string and includes
-    additional text, such as explanations, preambles, or markdown formatting (e.g., ```json{...}```).
+    Parses the first complete JSON object from a raw model output string and validates it against the Template Pydantic class.
     """
     try:
-        start_idx = model_output.index("{")
-        end_idx = model_output.rindex("}")
-        template_str = model_output[start_idx:end_idx + 1]
-        return Template.model_validate_json(template_str)
-    except ValidationError as e:
-        raise ToolException(f"Could not parse JSON string into Template Pydantic class: {e}")
-    except ValueError as e:
-        raise ToolException(f"Could not find a valid JSON object within the model's output: {e}")
+        # 첫 번째 여는 중괄호 '{'를 찾습니다.
+        start_idx = model_output.find('{')
+        if start_idx == -1:
+            raise ValueError("Could not find start of JSON object '{' in model output.")
+
+        # 여는 중괄호와 닫는 중괄호의 개수를 세어 짝이 맞는 첫 번째 JSON 객체의 끝을 찾습니다.
+        open_braces = 1
+        end_idx = -1
+        for i in range(start_idx + 1, len(model_output)):
+            char = model_output[i]
+            if char == '{':
+                open_braces += 1
+            elif char == '}':
+                open_braces -= 1
+
+            if open_braces == 0:
+                end_idx = i
+                break
+
+        if end_idx == -1:
+            raise ValueError("Could not find matching closing brace '}' for JSON object.")
+
+        # 정확히 첫 번째 JSON 객체 문자열만 추출합니다.
+        template_str = model_output[start_idx : end_idx + 1]
+
+        # ast.literal_eval로 파이썬 딕셔너리로 변환 후 Pydantic으로 검증합니다.
+        template_dict = ast.literal_eval(template_str)
+        return Template.model_validate(template_dict)
+
+    except (ValidationError, ValueError, SyntaxError) as e:
+        raise ToolException(f"Could not parse string into Template Pydantic class: {e}")
     except Exception as e:
-        raise ToolException(f"Failed to parse model's output: {e}")
+        raise ToolException(f"An unexpected error occurred during parsing: {e}")
 
 @tool
 def generate_template(
@@ -78,7 +102,15 @@ def generate_template(
     models = model_loader.models
     gen_model, gen_tokenizer = models.get("gen")
 
-    prompt = f"original_template: {original_template}\nuser_input: {user_input}\npolicy: {related_policy}\ntemplate: "
+    one_shot_example = """user_input: 회사소개서 발송 템플릿 제작 부탁드려요
+policy: ["정보성 메시지란 정보통신망법 안내서에 '영리목적 광고성 정보의 예외'에 해당하는 메시지입니다."]
+template: {"title": "회사소개서 발송", "text": "안녕하세요 #{수신자명}님,\\n\\n#{회사명}은 #{업종} 분야에서 활동하는 #{회사명}입니다.\\n\\n▶ 회사명 : #{회사명}\\n▶ 업종 : #{업종}\\n▶ 연락처 : #{연락처}\\n\\n감사합니다.", "button_name": "자세히 보기"}"""
+
+    actual_request = f"""user_input: {user_input}
+policy: {related_policy}
+template:"""
+
+    prompt = f"{one_shot_example}\n\n---\n\n{actual_request}"
 
     inputs = gen_tokenizer(prompt, return_tensors="pt", max_length=512, truncation=True).to(gen_model.device)
 
@@ -86,11 +118,15 @@ def generate_template(
         outputs = gen_model.generate(
             **inputs,
             max_new_tokens=150,
-            temperature=0.3,
+            temperature=0.1,
             do_sample=True,
-            pad_token_id=gen_tokenizer.eos_token_id,
-            early_stopping=True
+            pad_token_id=gen_tokenizer.eos_token_id
         )
 
-    response = gen_tokenizer.decode(outputs[0], skip_special_tokens=True)
-    return response.split("template: ")[-1].strip()
+    full_response = gen_tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+    # 'template:' 뒤의 내용만 반환하도록 더 안정적으로 수정
+    if 'template:' in full_response:
+        return full_response.split('template:')[-1].strip()
+    else:
+        return full_response

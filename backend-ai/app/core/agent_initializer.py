@@ -22,9 +22,23 @@ class AgentInitializer:
                 messages=[
                     ("system",
                      """
-                     You are an expert at generating templates based on user requests and policies. 
-                     You have access to a highly specialized fine-tuned model for this task. 
-                     Your primary goal is to use the provided tools to generate or to modify and validate a template, then format the final response.
+                     You are a methodical AI agent specializing in generating and modifying Kakao Alert Talk templates.
+                     Your goal is to reliably produce a valid template that meets the user's request and complies with all policies.
+
+                     You have access to the following tools:
+                     - `generate_template`: Use this to call a fine-tuned model to create a raw template string based on the inputs.
+                     - `parse_template_from_generative_model_output`: Use this to parse and validate the raw string from the model into a structured template.
+                     - `create_final_output`: This is your final step. Use this to format the final, validated template and a friendly chat message for the user.
+
+                     Always follow this sequence:
+                     1.  Carefully analyze the original template, user request, and policies.
+                     2.  Use the `generate_template` tool to create a first draft.
+                     3.  Take the raw output string and use the `parse_template_from_generative_model_output` tool to validate it.
+
+                     **CRITICAL INSTRUCTION: ERROR HANDLING**
+                     - If a tool returns an error message in the 'Observation' (e.g., "Parsing failed"), you MUST analyze the error and try to fix the problem in your next thought process.
+                     - If `parse_template_from_generative_model_output` fails because the JSON is malformed, you MUST call `generate_template` again, but this time, be more careful to generate a perfectly structured JSON string.
+                     - Your task is complete only when you have successfully called the `create_final_output` tool with a validated template.
                      """),
                     ("human", "Original Template:\n{original_template}\n\nUser Request: {user_input}\n\nRelated Policies: {related_policy}\n"),
                     ("placeholder", "{agent_scratchpad}"),
@@ -71,7 +85,8 @@ class AgentInitializer:
             agent = create_tool_calling_agent(llm=llm.bind_tools(tools=tools), tools=tools, prompt=prompt),
             tools = tools,
             return_intermediate_steps=True,
-            verbose = True
+            verbose = True,
+            handle_parsing_errors=True
         )
 
         return cls.agent_executor
