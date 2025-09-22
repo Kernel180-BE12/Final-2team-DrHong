@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {Link, Grid, Box, Divider, Typography} from '@mui/material';
 import FormLayout from '../components/layout/FormLayout';
 import CommonTextField from '../components/form/CommonTextField';
 import CommonButton from '../components/button/CommonButton';
 import FindPassword from "./FindPassword";
-
 
 const Login = () => {
     const [formValues, setFormValues] = useState({
@@ -16,6 +15,8 @@ const Login = () => {
     const [emailHelperText, setEmailHelperText] = useState('');
 
     const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+    const navigate = useNavigate();
 
     const validateEmail = (email) => {
         if (!email) {
@@ -45,13 +46,49 @@ const Login = () => {
         }
     };
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
         const isEmailValid = validateEmail(formValues.email);
 
         if (isEmailValid) {
             console.log('로그인 시도:', formValues);
-            // 여기에 백엔드로 데이터를 전송하는 로그인 로직을 구현합니다.
+            try {
+                const response = await fetch('http://localhost:8080/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: formValues.email,
+                        password: formValues.password,
+                    }),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || '로그인 실패');
+                }
+
+                const data = await response.json();
+                const { token, refreshToken } = data;
+
+                localStorage.setItem('accessToken', token);
+                localStorage.setItem('refreshToken', refreshToken);
+
+                // UserLoginResponse에서 userRole을 직접 저장
+                if (data.userRole) {
+                    localStorage.setItem('userRole', data.userRole);
+                }
+
+                console.log('로그인 성공!', data);
+                alert('로그인 성공!');
+
+                navigate('/publicTemplate');
+
+            } catch (error) {
+                console.error('로그인 실패:', error.message);
+                alert('로그인 실패: ' + error.message);
+            }
         } else {
             console.log('유효성 검사 실패');
         }
