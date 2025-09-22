@@ -1,3 +1,8 @@
+[[tool.poetry.source]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu121"
+priority = "explicit"
+
 [tool.poetry]
 name = "dr-hong-pr"
 version = "0.1.0"
@@ -7,7 +12,7 @@ readme = "README.md"
 package-mode = false
 
 [tool.poetry.dependencies]
-python = ">=3.11,<3.12"
+python = "^3.12"
 pandas = ">=2.3.2,<3.0.0"
 fastapi = "^0.116.1"
 pytest = "^8.4.2"
@@ -20,22 +25,21 @@ langchain-chroma = "^0.2.5"
 
 #ipywidgets = "^8.1.7"
 #ipykernel = ">=6.30.1,<7.0.0"
-#transformers = ">=4.56.0,<5.0.0"
-#torch = ">=2.8.0,<3.0.0"
+transformers = ">=4.56.0,<5.0.0"
+torch = {version = "~2.5.1", source = "pytorch"}
 #accelerate = ">=1.10.1,<2.0.0"
-#boto3 = ">=1.40.21,<2.0.0"
 #datasets = ">=4.0.0,<5.0.0"
-#openpyxl = ">=3.1.5,<4.0.0"
-#bitsandbytes = ">=0.47.0,<0.48.0"
-#peft = ">=0.17.1,<0.18.0"
-#numba = ">=0.61.2,<0.62.0"
+openpyxl = ">=3.1.5,<4.0.0"
+bitsandbytes = ">=0.47.0,<0.48.0"
+peft = ">=0.17.1,<0.18.0"
+numba = ">=0.61.2,<0.62.0"
 #wandb = ">=0.21.3,<0.22.0"
-#pycuda = ">=2025.1.1,<2026.0.0"
+pycuda = ">=2025.1.1,<2026.0.0"
 #evaluate = ">=0.4.5,<0.5.0"
 #scikit-learn = ">=1.7.1,<2.0.0"
 #nbformat = ">=5.10.4,<6.0.0"
 #flash-attn = "^2.8.3"
-#absl-py = "^2.3.1"
+absl-py = "^2.3.1"
 #rouge-score = "^0.1.2"
 #nltk = "^3.9.1"
 langchain-google-genai = "^2.1.12"
