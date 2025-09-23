@@ -60,14 +60,42 @@ public class User extends BaseEntity {
         return this.userRole == UserRole.ADMIN;
     }
 
-    // 정적 팩토리 메서드
-    public static User create(String userName, String userEmail, String userNumber) {
+    // 정적 팩토리 메서드들
+
+    /**
+     * 로컬 회원가입용 사용자 생성
+     *
+     * @param userName 사용자명
+     * @param userEmail 이메일
+     * @param userNumber 핸드폰 번호
+     * @return 로컬 회원가입용 User 엔티티
+     */
+    public static User createForLocalSignup(String userName, String userEmail, String userNumber) {
         return User.builder()
                 .userName(userName)
                 .userEmail(userEmail)
                 .userNumber(userNumber)
+                .userRole(UserRole.USER)
                 .build();
     }
+
+    /**
+     * 소셜 회원가입용 사용자 생성
+     *
+     * @param userName 소셜 계정에서 가져온 사용자명
+     * @param userEmail 소셜 계정 이메일
+     * @param userNumber 사용자가 입력한 핸드폰 번호
+     * @return 소셜 회원가입용 User 엔티티
+     */
+    public static User createForSocialSignup(String userName, String userEmail, String userNumber) {
+        return User.builder()
+                .userName(userName)
+                .userEmail(userEmail)
+                .userNumber(userNumber)
+                .userRole(UserRole.USER)
+                .build();
+    }
+
 
     // 비즈니스 메서드: 정보 업데이트
     public void updateInfo(String userName, String userNumber) {
