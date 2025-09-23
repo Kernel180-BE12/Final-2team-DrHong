@@ -36,6 +36,13 @@ public class SecurityConfig implements WebMvcConfigurer {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final ObjectMapper objectMapper;
 
+    // OAuth2 사용자 서비스 주입
+    private final com.jober.final2teamdrhong.service.CustomOAuth2UserService customOAuth2UserService;
+
+    // OAuth2 성공/실패 핸들러 주입
+    private final com.jober.final2teamdrhong.service.OAuth2AuthenticationSuccessHandler oAuth2AuthenticationSuccessHandler;
+    private final com.jober.final2teamdrhong.service.OAuth2AuthenticationFailureHandler oAuth2AuthenticationFailureHandler;
+
     @Value("${app.cors.allowed-origins:http://localhost:3000,http://localhost:8080}")
     private String allowedOrigins;
 
@@ -107,9 +114,19 @@ public class SecurityConfig implements WebMvcConfigurer {
                 })
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/auth/signup", "/auth/send-verification-code", "/auth/login", "/auth/refresh", "/auth/logout").permitAll() // 회원가입 및 로그인 관련 API는 누구나 접근 가능
+                        .requestMatchers("/auth/social/**", "/login/oauth2/**", "/oauth2/**").permitAll() // OAuth2 소셜 로그인 관련 API는 누구나 접근 가능
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html", "/swagger-resources/**", "/webjars/**").permitAll() // Swagger UI는 누구나 접근 가능
                         .requestMatchers("/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated() // 나머지 API는 인증된 사용자만 접근 가능
+                )
+                // OAuth2 로그인 설정
+                .oauth2Login(oauth2 -> oauth2
+                        // Spring Security OAuth2의 기본 경로 사용 (context-path 자동 적용)
+                        .userInfoEndpoint(userInfo -> userInfo
+                                .userService(customOAuth2UserService)
+                        )
+                        .successHandler(oAuth2AuthenticationSuccessHandler)
+                        .failureHandler(oAuth2AuthenticationFailureHandler)
                 )
                 // 여기에 JWT 필터 추가
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
