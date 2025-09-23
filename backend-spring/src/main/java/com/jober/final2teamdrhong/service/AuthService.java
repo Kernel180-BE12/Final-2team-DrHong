@@ -2,14 +2,18 @@ package com.jober.final2teamdrhong.service;
 
 import com.jober.final2teamdrhong.config.AuthProperties;
 import com.jober.final2teamdrhong.config.JwtConfig;
+import com.jober.final2teamdrhong.dto.auth.OAuth2TempUserInfo;
+import com.jober.final2teamdrhong.dto.auth.SocialSignupRequest;
+import com.jober.final2teamdrhong.dto.auth.SocialSignupResponse;
 import com.jober.final2teamdrhong.dto.userLogin.TokenRefreshResponse;
 import com.jober.final2teamdrhong.dto.userLogin.UserLoginRequest;
 import com.jober.final2teamdrhong.dto.userLogin.UserLoginResponse;
 import com.jober.final2teamdrhong.dto.userSignup.UserSignupRequest;
 import com.jober.final2teamdrhong.entity.User;
 import com.jober.final2teamdrhong.entity.UserAuth;
+import com.jober.final2teamdrhong.dto.auth.OAuth2UserInfoFactory;
 import com.jober.final2teamdrhong.exception.AuthenticationException;
-import com.jober.final2teamdrhong.exception.DuplicateResourceException;
+import com.jober.final2teamdrhong.exception.BusinessException;
 import com.jober.final2teamdrhong.repository.UserRepository;
 import com.jober.final2teamdrhong.service.storage.VerificationStorage;
 import com.jober.final2teamdrhong.util.LogMaskingUtil;
@@ -37,6 +41,8 @@ public class AuthService {
     private final BlacklistService blacklistService;
     private final AuthProperties authProperties;
     private final TimingAttackProtection timingAttackProtection;
+    private final OAuth2TempStorageService oAuth2TempStorageService;
+    private final UserValidationService userValidationService;
 
     /**
      * Rate limiting과 함께 회원가입 처리
@@ -53,14 +59,14 @@ public class AuthService {
         log.info("회원가입 시작: email={}", requestDto.email());
 
         // 1. 비즈니스 규칙 검증 (기본 유효성 검증은 @Valid에서 처리됨)
-        validateBusinessRules(requestDto);
+        userValidationService.validateLocalSignupBusinessRules(requestDto);
 
         // 2. 인증 코드 검증
         validateVerificationCode(requestDto.email(), requestDto.verificationCode());
 
         try {
-            // 4. 새로운 User 생성
-            User newUser = User.create(
+            // 4. 새로운 User 생성 (로컬 회원가입용)
+            User newUser = User.createForLocalSignup(
                     requestDto.userName(),
                     requestDto.email(),
                     requestDto.userNumber()
@@ -88,15 +94,6 @@ public class AuthService {
         }
     }
 
-    private void validateBusinessRules(UserSignupRequest requestDto) {
-        // 이메일 중복 확인 (비즈니스 규칙)
-        if (userRepository.findByUserEmail(requestDto.email()).isPresent()) {
-            throw new DuplicateResourceException("이미 가입된 이메일입니다.");
-        }
-
-        // 추가 비즈니스 규칙들이 여기에 들어갈 수 있음
-        // 예: 이메일 도메인 제한, 사용자명 금지어 체크 등
-    }
 
     private void validateVerificationCode(String email, String inputCode) {
         // Rate limiting 검사: 이메일별 검증 실패 제한
@@ -111,6 +108,109 @@ public class AuthService {
         }
 
         log.info("인증 코드 검증 성공 (일회성): email={}", LogMaskingUtil.maskEmail(email));
+    }
+
+    /**
+     * 소셜 로그인 회원가입 완료 처리
+     * OAuth2 임시 정보와 핸드폰 번호를 결합하여 회원가입을 완료합니다.
+     *
+     * @param request 소셜 회원가입 요청 정보
+     * @return 회원가입 완료 응답 (JWT 토큰 포함)
+     */
+    public SocialSignupResponse completeSocialSignup(SocialSignupRequest request) {
+        log.info("소셜 회원가입 완료 시작 - 임시 키: {}", request.tempKey());
+
+        try {
+            // 1. OAuth2 임시 정보 조회
+            OAuth2TempUserInfo tempUserInfo = oAuth2TempStorageService.retrieveTempUserInfo(request.tempKey());
+            if (tempUserInfo == null) {
+                throw new BusinessException("임시 사용자 정보를 찾을 수 없습니다. 소셜 로그인을 다시 시도해 주세요.");
+            }
+
+            // 2. 임시 정보 유효성 재검증
+            if (!tempUserInfo.isValid() || !tempUserInfo.isEmailValid()) {
+                log.error("임시 정보 유효성 검증 실패 - 키: {}", request.tempKey());
+                throw new BusinessException("임시 사용자 정보가 손상되었습니다. 소셜 로그인을 다시 시도해 주세요.");
+            }
+
+            // 3. 핸드폰 번호 형식 검증만 수행 (인증 코드 검증 생략)
+
+            // 4. 소셜 회원가입 비즈니스 규칙 검증
+            userValidationService.validateSocialSignupBusinessRules(tempUserInfo.email(), tempUserInfo.name(), request);
+
+            // 5. 새로운 User 및 소셜 인증 생성
+            User newUser = createSocialUser(tempUserInfo, request);
+
+            // 6. JWT 토큰 발급
+            String accessToken = jwtConfig.generateAccessToken(newUser.getUserEmail(), newUser.getUserId());
+            String refreshToken = refreshTokenService.createRefreshToken(newUser, "social-signup");
+
+            // 7. 임시 정보 삭제 (회원가입 완료)
+            oAuth2TempStorageService.deleteTempUserInfo(request.tempKey());
+
+            log.info("소셜 회원가입 완료 성공 - 사용자 ID: {}, 이메일: {}, 제공자: {}",
+                    newUser.getUserId(), tempUserInfo.email(), tempUserInfo.provider());
+
+            // 8. 응답 생성
+            return SocialSignupResponse.success(
+                    newUser.getUserId(),
+                    accessToken,
+                    refreshToken,
+                    newUser.getUserEmail(),
+                    newUser.getUserName(),
+                    newUser.getUserRole().name(),
+                    tempUserInfo.provider()
+            );
+
+        } catch (BusinessException | AuthenticationException e) {
+            log.warn("소셜 회원가입 완료 실패 - 임시 키: {}, 오류: {}", request.tempKey(), e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.error("소셜 회원가입 완료 중 예상치 못한 오류 - 임시 키: {}, 오류: {}",
+                    request.tempKey(), e.getMessage(), e);
+            throw new BusinessException("회원가입 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+        }
+    }
+
+
+    /**
+     * 소셜 사용자 생성 및 저장
+     */
+    private User createSocialUser(OAuth2TempUserInfo tempUserInfo, SocialSignupRequest request) {
+        try {
+            // 1. 새로운 User 생성 (소셜 회원가입용)
+            User newUser = User.createForSocialSignup(
+                    tempUserInfo.name(),
+                    tempUserInfo.email(),
+                    request.getNormalizedPhoneNumber()
+            );
+
+            // 2. OAuth2 제공자에 따른 AuthType 결정
+            UserAuth.AuthType authType = OAuth2UserInfoFactory.getAuthType(tempUserInfo.provider());
+
+            // 3. 소셜 인증 정보 생성
+            UserAuth socialAuth = UserAuth.createSocialAuth(
+                    newUser,
+                    authType,
+                    tempUserInfo.socialId()
+            );
+
+            // 4. 소셜 인증은 이미 완료된 상태로 설정
+            socialAuth.markAsVerified();
+
+            // 5. 관계 설정
+            newUser.addUserAuth(socialAuth);
+
+            // 6. 사용자 저장
+            userRepository.save(newUser);
+
+            return newUser;
+
+        } catch (Exception e) {
+            log.error("소셜 사용자 생성 실패 - 이메일: {}, 제공자: {}, 오류: {}",
+                    tempUserInfo.email(), tempUserInfo.provider(), e.getMessage());
+            throw new BusinessException("사용자 계정 생성에 실패했습니다.");
+        }
     }
 
     /**
