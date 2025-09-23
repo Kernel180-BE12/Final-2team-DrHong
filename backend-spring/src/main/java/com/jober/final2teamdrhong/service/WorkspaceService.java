@@ -7,6 +7,7 @@ import com.jober.final2teamdrhong.entity.Workspace;
 import com.jober.final2teamdrhong.repository.WorkspaceRepository;
 import com.jober.final2teamdrhong.service.validator.UserValidator;
 import com.jober.final2teamdrhong.service.validator.WorkspaceValidator;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +25,7 @@ public class WorkspaceService {
     private final WorkspaceRepository workspaceRepository;
     private final UserValidator userValidator;
     private final WorkspaceValidator workspaceValidator;
+    private final EntityManager entityManager;
 
     /**
      * 인증된 사용자를 위해 새로운 워크스페이스를 생성합니다.
@@ -141,17 +143,26 @@ public class WorkspaceService {
     }
 
     /**
-     * 특정 워크스페이스를 삭제합니다 (소프트 딜리트).
+     * 특정 워크스페이스를 소프트 딜리트 처리합니다.
      * <p>
-     * 요청한 사용자가 해당 워크스페이스의 소유자인지 확인하는 인가 과정이 포함되며,
-     * 실제 데이터베이스에서 삭제되지 않고 is_deleted 플래그를 true로 변경하고 deleted_at에 현재 시간을 설정합니다.
-     * <p>
-     * JPA의 Dirty Checking 기능을 통해 변경사항이 자동으로 데이터베이스에 UPDATE됩니다.
+     * 이 메서드는 {@link Workspace} 엔티티에 적용된 {@code @SQLRestriction("is_deleted = false")}로 인해
+     * 일반적인 조회 메서드로는 소프트 딜리트된 엔티티를 재조회할 수 없는 문제를 해결합니다.
+     * 정확한 삭제 시간을 응답으로 반환하기 위해 다음의 과정을 거칩니다:
+     * <ol>
+     *     <li>엔티티의 상태를 변경합니다 (Dirty Checking 대상).</li>
+     *     <li>{@code entityManager.flush()}를 호출하여 변경사항을 DB에 즉시 동기화합니다.</li>
+     *     <li>{@code entityManager.clear()}를 호출하여 영속성 컨텍스트를 비웁니다.</li>
+     *     <li>{@code @SQLRestriction}을 우회하는 네이티브 쿼리 메서드
+     *         ({@link WorkspaceRepository#findByIdIncludingDeleted(Integer)})를 사용하여,
+     *         DB에 실제로 기록된 최종 상태를 다시 조회합니다.</li>
+     *     <li>재조회된 엔티티를 DTO로 변환하여 반환함으로써, 응답 시간과 DB 시간의 일관성을 보장합니다.</li>
+     * </ol>
      *
-     * @param workspaceId 삭제할 워크스페이스의 ID
-     * @param userId      삭제를 요청한 사용자의 ID (현재 인증된 사용자)
-     * @return 삭제 처리된 워크스페이스의 간략 정보 (SimpleDTO)
+     * @param workspaceId 소프트 딜리트할 워크스페이스의 ID
+     * @param userId      요청을 보낸 사용자의 ID (인가에 사용)
+     * @return 소프트 딜리트 처리된 워크스페이스의 정보({@link WorkspaceResponse.SimpleDTO})
      * @throws IllegalArgumentException 해당 워크스페이스가 존재하지 않거나, 사용자가 소유자가 아닐 경우 발생
+     * @throws IllegalStateException    소프트 딜리트 후 엔티티를 재조회하는 과정에서 문제가 발생했을 경우 발생
      */
     @Transactional
     public WorkspaceResponse.SimpleDTO deleteWorkspace(Integer workspaceId, Integer userId) {
@@ -161,6 +172,14 @@ public class WorkspaceService {
         // 2. 소프트 딜리트 처리
         existingWorkspace.softDelete();
 
-        return new WorkspaceResponse.SimpleDTO(existingWorkspace);
+        // 3. 즉시 DB에 반영, 및 Hibernate 1차 캐시 비우기 후 변경된 DB를 반환해야 정확한 시간이 응답으로 나옴
+        entityManager.flush();
+        entityManager.clear();
+
+        // 4. @SQLRestriction을 우회하는 네이티브 쿼리로 재조회하여 시간 동기화
+        Workspace deletedWorkspace = workspaceRepository.findByIdIncludingDeleted(workspaceId)
+                .orElseThrow(() -> new IllegalStateException("소프트 딜리트 처리된 워크스페이스를 재조회하는 데 실패했습니다. ID: " + workspaceId));
+
+        return new WorkspaceResponse.SimpleDTO(deletedWorkspace);
     }
 }

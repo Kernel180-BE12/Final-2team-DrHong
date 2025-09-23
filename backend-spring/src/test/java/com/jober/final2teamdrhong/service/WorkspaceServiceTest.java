@@ -7,6 +7,7 @@ import com.jober.final2teamdrhong.entity.Workspace;
 import com.jober.final2teamdrhong.repository.WorkspaceRepository;
 import com.jober.final2teamdrhong.service.validator.UserValidator;
 import com.jober.final2teamdrhong.service.validator.WorkspaceValidator;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,7 +16,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -31,6 +34,8 @@ class WorkspaceServiceTest {
     private UserValidator userValidator;
     @Mock
     private WorkspaceValidator workspaceValidator;
+    @Mock
+    private EntityManager entityManager;
 
     // @InjectMocks: @Mock으로 생성된 가짜 객체들을 실제 테스트 대상인 클래스에 주입합니다.
     @InjectMocks
@@ -253,14 +258,22 @@ class WorkspaceServiceTest {
                 .user(mockUser)
                 .build());
 
+        // 소프트 딜리트 후 재조회될 워크스페이스 Mock 객체
+        Workspace deletedWorkspace = mock(Workspace.class);
+
         when(workspaceValidator.validateAndGetWorkspace(workspaceId, userId)).thenReturn(existingWorkspace);
+        when(workspaceRepository.findByIdIncludingDeleted(workspaceId)).thenReturn(Optional.of(deletedWorkspace));
 
         // when
-        workspaceService.deleteWorkspace(workspaceId, userId);
+        WorkspaceResponse.SimpleDTO result = workspaceService.deleteWorkspace(workspaceId, userId);
 
         // then
+        assertNotNull(result);
         verify(workspaceValidator, times(1)).validateAndGetWorkspace(workspaceId, userId);
         verify(existingWorkspace, times(1)).softDelete();
+        verify(entityManager, times(1)).flush();
+        verify(entityManager, times(1)).clear();
+        verify(workspaceRepository, times(1)).findByIdIncludingDeleted(workspaceId);
     }
 
     @Test
@@ -275,5 +288,37 @@ class WorkspaceServiceTest {
         assertThrows(IllegalArgumentException.class, () -> workspaceService.deleteWorkspace(nonExistingWorkspaceId, userId));
 
         // then: 이 시나리오에서는 후속 검증이 필요 없습니다.
+    }
+
+    @Test
+    @DisplayName("워크스페이스 삭제 실패 테스트 - 소프트 딜리트 후 재조회 실패")
+    void deleteWorkspace_Fail_RefetchFailed_Test() {
+        // given
+        Integer userId = 1;
+        Integer workspaceId = 1;
+        User mockUser = mock(User.class);
+
+        Workspace existingWorkspace = spy(Workspace.builder()
+                .workspaceName("Workspace to Delete")
+                .workspaceUrl("delete-url")
+                .representerName("Delete Rep")
+                .representerPhoneNumber("010-1234-5678")
+                .companyName("Delete Co")
+                .user(mockUser)
+                .build());
+
+        when(workspaceValidator.validateAndGetWorkspace(workspaceId, userId)).thenReturn(existingWorkspace);
+        when(workspaceRepository.findByIdIncludingDeleted(workspaceId)).thenReturn(Optional.empty());
+
+        // when & then
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> workspaceService.deleteWorkspace(workspaceId, userId));
+
+        assertThat(exception.getMessage()).isEqualTo("소프트 딜리트 처리된 워크스페이스를 재조회하는 데 실패했습니다. ID: " + workspaceId);
+        verify(workspaceValidator, times(1)).validateAndGetWorkspace(workspaceId, userId);
+        verify(existingWorkspace, times(1)).softDelete();
+        verify(entityManager, times(1)).flush();
+        verify(entityManager, times(1)).clear();
+        verify(workspaceRepository, times(1)).findByIdIncludingDeleted(workspaceId);
     }
 }

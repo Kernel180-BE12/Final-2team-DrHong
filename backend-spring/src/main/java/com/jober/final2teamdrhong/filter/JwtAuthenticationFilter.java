@@ -44,7 +44,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
             return;
         }
-        
+
+        // 이미 인증이 설정되어 있는 경우 (테스트 환경에서 Mock 인증 등) 필터를 건너뜀
+        if (SecurityContextHolder.getContext().getAuthentication() != null &&
+            SecurityContextHolder.getContext().getAuthentication().isAuthenticated()) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         try{
             // 1. Authorization 헤더에서 토큰 추출
             String token = jwtConfig.extractTokenFromHeader(request.getHeader("Authorization"));

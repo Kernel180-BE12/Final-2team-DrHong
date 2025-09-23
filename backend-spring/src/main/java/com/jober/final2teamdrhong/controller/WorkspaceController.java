@@ -189,6 +189,6 @@ public class WorkspaceController {
         Integer currentUserId = jwtClaims.getUserId();
         WorkspaceResponse.SimpleDTO deletedWorkspace = workspaceService.deleteWorkspace(workspaceId, currentUserId);
 
-        return ResponseEntity.ok(deletedWorkspace);
+        return ResponseEntity.status(HttpStatus.OK).body(deletedWorkspace);
     }
 }

@@ -172,4 +172,86 @@ class WorkspaceRepositoryTest {
         // 2. 실패 케이스 검증
         assertThat(failCase).isNotPresent(); // Optional이 비어있는지 확인 (남의 것은 조회되면 안 됨)
     }
+
+    @Test
+    @DisplayName("소프트 딜리트된 워크스페이스 포함 조회 성공 테스트")
+    void findByIdIncludingDeleted_Success_ActiveWorkspace_Test() {
+        // given
+        // 1. 테스트용 워크스페이스를 생성합니다.
+        Workspace testWorkspace = Workspace.builder()
+                .workspaceName("테스트 워크스페이스")
+                .workspaceUrl("test-url")
+                .representerName("테스트대표")
+                .representerPhoneNumber("010-0000-0000")
+                .companyName("테스트회사")
+                .user(testUser)
+                .build();
+        entityManager.persist(testWorkspace);
+        entityManager.flush();
+
+        // when
+        // 1. 네이티브 쿼리로 활성 상태의 워크스페이스를 조회합니다.
+        Optional<Workspace> foundWorkspaceOpt =
+                workspaceRepository.findByIdIncludingDeleted(testWorkspace.getWorkspaceId());
+
+        // then
+        // 1. Optional 객체가 비어있지 않은지 확인합니다. (조회 성공)
+        assertThat(foundWorkspaceOpt).isPresent();
+        // 2. 조회된 워크스페이스의 정보가 올바른지 확인합니다.
+        assertThat(foundWorkspaceOpt.get().getWorkspaceName()).isEqualTo("테스트 워크스페이스");
+        assertThat(foundWorkspaceOpt.get().getIsDeleted()).isFalse();
+        assertThat(foundWorkspaceOpt.get().getDeletedAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("소프트 딜리트된 워크스페이스 포함 조회 성공 테스트 - 삭제된 워크스페이스")
+    void findByIdIncludingDeleted_Success_DeletedWorkspace_Test() {
+        // given
+        // 1. 테스트용 워크스페이스를 생성합니다.
+        Workspace testWorkspace = Workspace.builder()
+                .workspaceName("테스트 워크스페이스")
+                .workspaceUrl("test-url")
+                .representerName("테스트대표")
+                .representerPhoneNumber("010-0000-0000")
+                .companyName("테스트회사")
+                .user(testUser)
+                .build();
+        entityManager.persist(testWorkspace);
+        entityManager.flush();
+
+        // 2. 워크스페이스를 소프트 딜리트 처리합니다.
+        testWorkspace.softDelete();
+        workspaceRepository.save(testWorkspace);
+        entityManager.flush();
+
+        // when
+        // 1. 네이티브 쿼리로 소프트 딜리트된 워크스페이스를 조회합니다.
+        Optional<Workspace> foundWorkspaceOpt =
+                workspaceRepository.findByIdIncludingDeleted(testWorkspace.getWorkspaceId());
+
+        // then
+        // 1. Optional 객체가 비어있지 않은지 확인합니다. (조회 성공)
+        assertThat(foundWorkspaceOpt).isPresent();
+        // 2. 조회된 워크스페이스가 삭제된 상태인지 확인합니다.
+        assertThat(foundWorkspaceOpt.get().getWorkspaceName()).isEqualTo("테스트 워크스페이스");
+        assertThat(foundWorkspaceOpt.get().getIsDeleted()).isTrue();
+        assertThat(foundWorkspaceOpt.get().getDeletedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("소프트 딜리트된 워크스페이스 포함 조회 실패 테스트 - 존재하지 않는 ID")
+    void findByIdIncludingDeleted_Fail_NonExistentId_Test() {
+        // given
+        // 1. 존재하지 않는 워크스페이스 ID를 준비합니다.
+        Integer nonExistentId = 9999;
+
+        // when
+        // 1. 존재하지 않는 ID로 네이티브 쿼리 조회를 시도합니다.
+        Optional<Workspace> foundWorkspaceOpt =
+                workspaceRepository.findByIdIncludingDeleted(nonExistentId);
+
+        // then
+        // 1. Optional 객체가 비어있는지 확인합니다. (조회 실패)
+        assertThat(foundWorkspaceOpt).isNotPresent();
+    }
 }

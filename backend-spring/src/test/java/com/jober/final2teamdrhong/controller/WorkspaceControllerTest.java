@@ -299,6 +299,9 @@ class WorkspaceControllerTest {
         // 3. DTO 객체를 JSON 문자열로 변환합니다.
         String requestBody = objectMapper.writeValueAsString(updateDTO);
 
+        // 4. updatedAt 비교를 위해 1초 대기합니다. (BaseEntity에서 초 단위로 truncate하기 때문)
+        Thread.sleep(1000);
+
         // when
         // 1. MockMvc를 사용하여 PUT /workspaces/{workspaceId} 엔드포인트로 API 요청을 보냅니다.
         //    - contentType을 application/json으로 설정합니다.
