@@ -8,7 +8,6 @@ import com.jober.final2teamdrhong.dto.userLogin.UserLoginResponse;
 import com.jober.final2teamdrhong.dto.userSignup.UserSignupRequest;
 import com.jober.final2teamdrhong.entity.User;
 import com.jober.final2teamdrhong.entity.UserAuth;
-import com.jober.final2teamdrhong.exception.DuplicateResourceException;
 import com.jober.final2teamdrhong.exception.AuthenticationException;
 import com.jober.final2teamdrhong.exception.RateLimitExceededException;
 import com.jober.final2teamdrhong.repository.UserRepository;
@@ -67,6 +66,12 @@ class AuthServiceTest {
     @Mock
     private BlacklistService blacklistService;
 
+    @Mock
+    private OAuth2TempStorageService oAuth2TempStorageService;
+
+    @Mock
+    private UserValidationService userValidationService;
+
     @InjectMocks
     private AuthService authService;
 
@@ -93,7 +98,6 @@ class AuthServiceTest {
     @DisplayName("성공: 유효한 데이터로 회원가입")
     void signup_success() {
         // given
-        given(userRepository.findByUserEmail(anyString())).willReturn(Optional.empty());
         given(verificationStorage.validateAndDelete(anyString(), anyString())).willReturn(true);
         given(passwordEncoder.encode(anyString())).willReturn("encoded-password");
         given(userRepository.save(any(User.class))).willReturn(createMockUser());
@@ -102,7 +106,7 @@ class AuthServiceTest {
         authService.signup(validSignupRequest);
 
         // then
-        then(userRepository).should().findByUserEmail("test@example.com");
+        then(userValidationService).should().validateLocalSignupBusinessRules(validSignupRequest);
         then(rateLimitService).should().checkEmailVerifyRateLimit("test@example.com");
         then(verificationStorage).should().validateAndDelete("test@example.com", "123456");
         then(userRepository).should().save(any(User.class));
@@ -112,11 +116,12 @@ class AuthServiceTest {
     @DisplayName("실패: 중복된 이메일로 회원가입")
     void signup_fail_duplicateEmail() {
         // given
-        given(userRepository.findByUserEmail(anyString())).willReturn(Optional.of(createMockUser()));
+        willThrow(new com.jober.final2teamdrhong.exception.DuplicateResourceException("이미 가입된 이메일입니다."))
+                .given(userValidationService).validateLocalSignupBusinessRules(validSignupRequest);
 
         // when & then
         assertThatThrownBy(() -> authService.signup(validSignupRequest))
-                .isInstanceOf(DuplicateResourceException.class)
+                .isInstanceOf(com.jober.final2teamdrhong.exception.DuplicateResourceException.class)
                 .hasMessageContaining("이미 가입된 이메일입니다.");
 
         then(verificationStorage).should(never()).validateAndDelete(anyString(), anyString());
@@ -135,7 +140,6 @@ class AuthServiceTest {
                 "999999"
         );
 
-        given(userRepository.findByUserEmail("test@example.com")).willReturn(Optional.empty());
         given(verificationStorage.validateAndDelete("test@example.com", "999999")).willReturn(false);
 
         // when & then
@@ -158,7 +162,6 @@ class AuthServiceTest {
                 "123456"
         );
 
-        given(userRepository.findByUserEmail("test@example.com")).willReturn(Optional.empty());
         given(verificationStorage.validateAndDelete("test@example.com", "123456")).willReturn(false);
 
         // when & then
@@ -182,7 +185,6 @@ class AuthServiceTest {
         );
         String clientIp = "192.168.1.1";
 
-        given(userRepository.findByUserEmail("test@example.com")).willReturn(Optional.empty());
         given(verificationStorage.validateAndDelete("test@example.com", "123456")).willReturn(true);
         given(passwordEncoder.encode("Test123!")).willReturn("encoded_password");
         given(userRepository.save(any(User.class))).willReturn(createMockUser());
@@ -417,7 +419,7 @@ class AuthServiceTest {
     }
 
     private User createMockUser() {
-        return User.create("테스트유저", "test@example.com", "010-1234-5678");
+        return User.createForLocalSignup("테스트유저", "test@example.com", "010-1234-5678");
     }
 
     private User createMockUserWithAuth() {
