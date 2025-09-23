@@ -37,6 +37,11 @@ public class AuthProperties {
      */
     private Messages messages = new Messages();
 
+    /**
+     * OAuth2 설정
+     */
+    private OAuth2 oauth2 = new OAuth2();
+
     @Getter
     @Setter
     public static class Security {
@@ -141,5 +146,24 @@ public class AuthProperties {
          * 인증 코드 만료 메시지
          */
         private String verificationCodeExpired = "인증 코드가 만료되었거나 유효하지 않습니다.";
+    }
+
+    @Getter
+    @Setter
+    public static class OAuth2 {
+        /**
+         * OAuth2 임시 정보 만료 시간 (분)
+         */
+        private int tempInfoExpiryMinutes = 15;
+
+        /**
+         * OAuth2 임시 정보 만료 시간 연장 최대 제한 (분)
+         */
+        private int maxExtensionMinutes = 30;
+
+        /**
+         * OAuth2 임시 정보 Redis 키 접두사
+         */
+        private String tempKeyPrefix = "oauth2_temp:";
     }
 }
