@@ -1,8 +1,8 @@
 package com.jober.final2teamdrhong.dto.favorite;
 
+import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
-import jakarta.validation.constraints.NotNull;
 
 @Getter
 @AllArgsConstructor

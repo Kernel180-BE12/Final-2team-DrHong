@@ -72,35 +72,35 @@ public class SecurityConfig implements WebMvcConfigurer {
                     headers.addHeaderWriter((request, response) -> {
                         // XSS 보호 헤더 (X-XSS-Protection) - 레거시 지원
                         response.setHeader("X-XSS-Protection", "1; mode=block");
-                        
+
                         // 레퍼러 정책 설정 (Referrer-Policy)
                         response.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-                        
+
                         // 권한 정책 설정 (Permissions-Policy)
                         response.setHeader("Permissions-Policy",
                                 "geolocation=(), microphone=(), camera=(), fullscreen=(self)");
-                        
+
                         // Content Security Policy (CSP) 헤더
-                        String cspPolicy = isDevelopment 
-                            ? buildDevelopmentCSP() 
+                        String cspPolicy = isDevelopment
+                            ? buildDevelopmentCSP()
                             : buildProductionCSP();
                         response.setHeader("Content-Security-Policy", cspPolicy);
-                        
+
                         // 추가 보안 헤더들
                         // Cross-Origin-Embedder-Policy
                         response.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
-                        
+
                         // Cross-Origin-Opener-Policy
                         response.setHeader("Cross-Origin-Opener-Policy", "same-origin");
-                        
+
                         // Cross-Origin-Resource-Policy
                         response.setHeader("Cross-Origin-Resource-Policy", "same-origin");
-                        
+
                         // Expect-CT (Certificate Transparency)
                         if (!isDevelopment) {
                             response.setHeader("Expect-CT", "max-age=86400, enforce");
                         }
-                        
+
                         // Server 헤더 숨기기 (정보 노출 방지)
                         response.setHeader("Server", "");
                     });
@@ -173,12 +173,12 @@ public class SecurityConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         // No interceptors added for now, as RequestTimingInterceptor is removed
     }
-    
+
     /**
      * 개발 환경용 CSP 정책 (덜 엄격함)
      */
     private String buildDevelopmentCSP() {
-        return String.join("; ", 
+        return String.join("; ",
             "default-src 'self'",
             "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // 개발용 Swagger, HMR 등 허용
             "style-src 'self' 'unsafe-inline'", // 인라인 스타일 허용 (개발 편의)
@@ -192,7 +192,7 @@ public class SecurityConfig implements WebMvcConfigurer {
             "form-action 'self'"
         );
     }
-    
+
     /**
      * 프로덕션 환경용 CSP 정책 (엄격함)
      */
@@ -200,8 +200,8 @@ public class SecurityConfig implements WebMvcConfigurer {
         // 허용된 도메인들 추출
         List<String> origins = Arrays.asList(allowedOrigins.split(","));
         String allowedDomains = String.join(" ", origins);
-        
-        return String.join("; ", 
+
+        return String.join("; ",
             "default-src 'self'",
             "script-src 'self' 'strict-dynamic'", // nonce 기반 스크립트 허용
             "style-src 'self' 'unsafe-inline'", // CSS는 해시 기반으로 제한

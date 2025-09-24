@@ -52,4 +52,11 @@ public class FavoriteResponse {
                 .buttonTitle(it.getButtonTitle())
                 .build();
     }
+
+    public static FavoriteResponse convertToFavoriteResponse(Favorite favorite) {
+        if (favorite.getPublicTemplate() != null) {
+            return FavoriteResponse.fromPublicTemplate(favorite);
+        }
+        return FavoriteResponse.fromIndividualTemplate(favorite);
+    }
 }

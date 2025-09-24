@@ -5,7 +5,7 @@
 # =====================================================
 # 이 스크립트는 다음 작업을 수행합니다:
 # 1. SSH 터널을 통해 AWS RDS MySQL에 연결 (포트 3307)
-# 2. Docker Compose를 통해 Redis 컨테이너/Python-AI 컨테이너 시작 (포트 6379/8001)
+# 2. Docker Compose를 통해 Redis 컨테이너/Python-AI 컨테이너 시작 (포트 6379/8000)
 # 3. 개발에 필요한 모든 인프라 서비스를 한 번에 시작
 # =====================================================
 
@@ -81,7 +81,7 @@ echo "=== 3. Python-AI 컨테이너 시작 ==="
 # Docker Compose를 통해 Python-AI 컨테이너 시작
 echo "Python-AI 컨테이너를 백그라운드에서 시작합니다..."
 if docker-compose up -d python-ai; then
-  echo "Python-AI 컨테이너가 성공적으로 시작되었습니다. (포트 8001)"
+  echo "Python-AI 컨테이너가 성공적으로 시작되었습니다. (포트 8000)"
 else
   echo "[WARNING] Python-AI 컨테이너 시작 중 문제가 발생했습니다."
 fi
@@ -95,7 +95,7 @@ echo "=== 개발 환경 설정 완료 ==="
 echo "다음 서비스가 사용 가능합니다:"
 echo "- MySQL (RDS): localhost:3307"
 echo "- Redis (Docker): localhost:6379"
-echo "- Python-AI (Docker): localhost:8001"
+echo "- Python-AI (Docker): localhost:8000"
 echo ""
 echo "Spring Boot 애플리케이션을 시작할 수 있습니다."
 

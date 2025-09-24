@@ -1,5 +1,6 @@
 package com.jober.final2teamdrhong.service;
 
+import com.jober.final2teamdrhong.dto.individualtemplate.IndividualTemplatePageableRequest;
 import com.jober.final2teamdrhong.dto.individualtemplate.IndividualTemplateResponse;
 import com.jober.final2teamdrhong.entity.IndividualTemplate;
 import com.jober.final2teamdrhong.entity.PublicTemplate;
@@ -7,13 +8,16 @@ import com.jober.final2teamdrhong.entity.Workspace;
 import com.jober.final2teamdrhong.repository.IndividualTemplateRepository;
 import com.jober.final2teamdrhong.repository.PublicTemplateRepository;
 import com.jober.final2teamdrhong.repository.WorkspaceRepository;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import org.springframework.security.access.AccessDeniedException;
+
 import java.util.concurrent.CompletableFuture;
 
 import static com.jober.final2teamdrhong.dto.individualtemplate.IndividualTemplateResponse.toResponse;
@@ -110,5 +114,80 @@ public class IndividualTemplateService {
         IndividualTemplateResponse individualTemplateResponse = createIndividualTemplateFromPublic(
                 publicTemplateId, workspaceId, userId);
         return CompletableFuture.completedFuture(individualTemplateResponse);
+    }
+
+    /**
+     * 개인 템플릿 전체 조회
+     */
+    @Transactional(readOnly = true)
+    public Page<IndividualTemplateResponse> getAllTemplates(
+            Integer workspaceId,
+            IndividualTemplatePageableRequest pageableRequest) {
+
+        Pageable pageable = pageableRequest.toPageable();
+
+        if (pageableRequest.getStatus() == null) {
+            return individualTemplateRepository.findByWorkspace_WorkspaceId(workspaceId, pageable)
+                    .map(IndividualTemplateResponse::toResponse);
+        } else {
+            return individualTemplateRepository.findByWorkspace_WorkspaceIdAndStatus(
+                    workspaceId,
+                    pageableRequest.getStatus(),
+                    pageable)
+                    .map(IndividualTemplateResponse::toResponse);
+        }
+    }
+
+    @Async
+    @Transactional(readOnly = true)
+    public CompletableFuture<Page<IndividualTemplateResponse>> getAllTemplatesAsync(
+            Integer workspaceId,
+            IndividualTemplatePageableRequest pageableRequest) {
+        log.info("[@Async] thread={}, isVirtual={}", Thread.currentThread().getName(), Thread.currentThread().isVirtual());
+        return CompletableFuture.completedFuture(getAllTemplates(workspaceId, pageableRequest));
+    }
+
+    /**
+     * 개인 템플릿 상태별 조회
+     */
+    @Transactional(readOnly = true)
+    public Page<IndividualTemplateResponse> getIndividualTemplateByStatus(
+            Integer workspaceId,
+            IndividualTemplate.Status status,
+            Pageable pageable) {
+
+        return individualTemplateRepository
+                .findByWorkspace_WorkspaceIdAndStatus(workspaceId, status, pageable)
+                .map(IndividualTemplateResponse::toResponse);
+    }
+
+    @Async
+    @Transactional(readOnly = true)
+    public CompletableFuture<Page<IndividualTemplateResponse>> getIndividualTemplateByStatusAsync(
+            Integer workspaceId,
+            IndividualTemplate.Status status,
+            Pageable pageable) {
+
+        log.info("[@Async] thread={}, isVirtual={}", Thread.currentThread().getName(), Thread.currentThread().isVirtual());
+        return CompletableFuture.completedFuture(getIndividualTemplateByStatus(workspaceId, status, pageable));
+    }
+
+    /**
+     * 개인 템플릿 단일 조회
+     */
+    @Transactional(readOnly = true)
+    public IndividualTemplateResponse getIndividualTemplate(Integer workspaceId, Integer individualTemplateId) {
+        IndividualTemplate individualTemplate = individualTemplateRepository
+                .findByIndividualTemplateIdAndWorkspace_WorkspaceId(individualTemplateId, workspaceId)
+                .orElseThrow(() -> new IllegalArgumentException("해당 템플릿이 존재하지 않습니다. id = " + individualTemplateId));
+
+        return IndividualTemplateResponse.toResponse(individualTemplate);
+    }
+
+    @Async
+    @Transactional(readOnly = true)
+    public CompletableFuture<IndividualTemplateResponse> getIndividualTemplateAsync(Integer workspaceId, Integer individualTemplateId) {
+        log.info("[@Async] thread={}, isVirtual={}", Thread.currentThread().getName(), Thread.currentThread().isVirtual());
+        return CompletableFuture.completedFuture(getIndividualTemplate(workspaceId, individualTemplateId));
     }
 }

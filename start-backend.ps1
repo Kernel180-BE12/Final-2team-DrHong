@@ -116,7 +116,7 @@ try {
     docker-compose up -d python-ai
 
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "Python-AI 컨테이너가 성공적으로 시작되었습니다. (포트 8001)" -ForegroundColor Green
+        Write-Host "Python-AI 컨테이너가 성공적으로 시작되었습니다. (포트 8000)" -ForegroundColor Green
     } else {
         Write-Host "[WARNING] Python-AI 컨테이너 시작 중 문제가 발생했습니다." -ForegroundColor Yellow
     }
@@ -135,5 +135,5 @@ Write-Host "`n=== 개발 환경 설정 완료 ===" -ForegroundColor Green
 Write-Host "다음 서비스가 사용 가능합니다:" -ForegroundColor Cyan
 Write-Host "- MySQL (RDS): localhost:3307" -ForegroundColor White
 Write-Host "- Redis (Docker): localhost:6379" -ForegroundColor White
-Write-Host "- Python-AI (Docker): localhost:8001" -ForegroundColor White
+Write-Host "- Python-AI (Docker): localhost:8000" -ForegroundColor White
 Write-Host "`nSpring Boot 애플리케이션을 시작할 수 있습니다." -ForegroundColor Green

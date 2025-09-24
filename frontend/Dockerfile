@@ -17,8 +17,9 @@ RUN npm run build
 
 # Nginx로 정적 파일 서빙
 FROM nginx:alpine
+ARG NGINX_CONFIG
 COPY --from=build /app/build /usr/share/nginx/html
-COPY frontend/nginx.conf /etc/nginx/nginx.conf
+COPY frontend/${NGINX_CONFIG} /etc/nginx/nginx.conf
 
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

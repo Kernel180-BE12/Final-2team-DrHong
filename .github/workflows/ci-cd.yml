@@ -1,0 +1,192 @@
+name: CI/CD Pipeline
+
+# ===========================================
+# 언제 이 워크플로우를 실행할 것인가?
+# ===========================================
+on:
+  push:
+    branches:
+      - dev   # dev 브랜치: CI + 개발 환경 배포
+      - main  # main 브랜치: 운영 환경 배포
+  pull_request:
+    branches:
+      - main  # main으로의 PR: CI만 실행
+
+# ===========================================
+# 실행할 작업(Job)들
+# ===========================================
+jobs:
+  # -------------------------------------------
+  # CI Job: 빌드 및 테스트 (dev 브랜치, PR)
+  # -------------------------------------------
+  ci:
+    # dev 브랜치 푸시 또는 main으로의 PR일 때만 실행
+    if: github.ref == 'refs/heads/dev' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:latest
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      # 1. 코드 체크아웃
+      - name: 📥 코드 체크아웃
+        uses: actions/checkout@v4
+
+      # 2. Java 21 환경 설정
+      - name: ☕ Java 21 환경 설정
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      # 3. Gradle 캐시 설정 (빌드 속도 향상)
+      - name: 📦 Gradle 캐시 설정
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      # 4. Gradle 실행 권한 부여
+      - name: 🔧 Gradle 실행 권한 부여
+        run: chmod +x gradlew
+
+      # 5. Spring Boot 애플리케이션 빌드 및 테스트
+      - name: 🔨 Spring Boot 빌드 및 테스트 실행
+        run: ./gradlew clean build
+
+  # -------------------------------------------
+  # 개발 환경 배포 Job (dev 브랜치만)
+  # -------------------------------------------
+  deploy-dev:
+    # dev 브랜치 푸시일 때만 실행 + CI 성공 후
+    if: github.ref == 'refs/heads/dev'
+    needs: ci
+    runs-on: ubuntu-latest
+
+    steps:
+      # EC2 서버에 SSH 접속하여 개발 환경 배포
+      - name: 🚀 개발환경 배포 (dev.notimo.kro.kr)
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script: |
+            echo "🚀 개발 환경 배포 시작..."
+
+            # 프로젝트 디렉토리로 이동
+            cd /home/ec2-user
+
+            # 프로젝트 폴더 존재 여부 확인 및 코드 업데이트
+            if [ -d "Final-2team-DrHong" ]; then
+              echo "📁 기존 프로젝트 폴더 발견. 최신 코드 업데이트 중..."
+              cd Final-2team-DrHong
+              # PAT를 사용한 인증으로 git pull
+              git remote set-url origin https://${{ secrets.GH_PAT }}@github.com/Kernel180-BE12/Final-2team-DrHong.git
+              git pull origin dev
+              git remote set-url origin https://github.com/Kernel180-BE12/Final-2team-DrHong.git
+            else
+              echo "📁 프로젝트 폴더 없음. 새로 클론 중..."
+              git clone https://${{ secrets.GH_PAT }}@github.com/Kernel180-BE12/Final-2team-DrHong.git
+              cd Final-2team-DrHong
+              git checkout dev
+              git remote set-url origin https://github.com/Kernel180-BE12/Final-2team-DrHong.git
+            fi
+
+            # .env 파일 확인 및 생성
+            if [ ! -f ".env" ]; then
+              if [ -f ".env.example" ]; then
+                echo "📄 .env 파일 생성 중..."
+                cp .env.example .env
+              else
+                echo "⚠️ 경고: .env.example 파일이 없습니다."
+              fi
+            fi
+
+            # 기존 개발 환경 컨테이너 정리 (포트 3001)
+            echo "🧹 기존 개발 환경 컨테이너 정리 중..."
+            docker compose -f docker-compose-dev.yml down --remove-orphans || true
+
+            # 개발 환경 배포 (H2 DB, 포트 3001)
+            echo "🔨 개발 환경 빌드 및 배포 중... (H2 DB, dev.notimo.kro.kr)"
+            docker compose -f docker-compose-dev.yml up --build -d
+
+            # 배포 결과 확인
+            echo "✅ 개발 환경 배포 완료!"
+            echo "🌐 접속 URL: https://dev.notimo.kro.kr"
+            echo "📊 컨테이너 상태:"
+            docker compose -f docker-compose-dev.yml ps
+
+  # -------------------------------------------
+  # 운영 환경 배포 Job (main 브랜치만)
+  # -------------------------------------------
+  deploy-prod:
+    # main 브랜치 푸시일 때만 실행
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      # EC2 서버에 SSH 접속하여 운영 환경 배포
+      - name: 🚀 운영환경 배포 (notimo.kro.kr)
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          script: |
+            echo "🚀 운영 환경 배포 시작..."
+
+            # 프로젝트 디렉토리로 이동
+            cd /home/ec2-user
+
+            # 프로젝트 폴더 존재 여부 확인 및 코드 업데이트
+            if [ -d "Final-2team-DrHong" ]; then
+              echo "📁 기존 프로젝트 폴더 발견. 최신 코드 업데이트 중..."
+              cd Final-2team-DrHong
+              # PAT를 사용한 인증으로 git pull
+              git remote set-url origin https://${{ secrets.GH_PAT }}@github.com/Kernel180-BE12/Final-2team-DrHong.git
+              git pull origin main
+              git remote set-url origin https://github.com/Kernel180-BE12/Final-2team-DrHong.git
+            else
+              echo "📁 프로젝트 폴더 없음. 새로 클론 중..."
+              git clone https://${{ secrets.GH_PAT }}@github.com/Kernel180-BE12/Final-2team-DrHong.git
+              cd Final-2team-DrHong
+              git checkout main
+              git remote set-url origin https://github.com/Kernel180-BE12/Final-2team-DrHong.git
+            fi
+
+            # .env 파일 확인 및 생성
+            if [ ! -f ".env" ]; then
+              if [ -f ".env.example" ]; then
+                echo "📄 .env 파일 생성 중..."
+                cp .env.example .env
+              else
+                echo "⚠️ 경고: .env.example 파일이 없습니다."
+              fi
+            fi
+
+            # 기존 운영 환경 컨테이너 정리 (포트 3002)
+            echo "🧹 기존 운영 환경 컨테이너 정리 중..."
+            docker compose -f docker-compose-prod.yml down --remove-orphans || true
+
+            # 운영 환경 배포 (MySQL RDS, 포트 3002)
+            echo "🔨 운영 환경 빌드 및 배포 중... (MySQL RDS, notimo.kro.kr)"
+            docker compose -f docker-compose-prod.yml up --build -d
+
+            # 배포 결과 확인
+            echo "✅ 운영 환경 배포 완료!"
+            echo "🌐 접속 URL: https://notimo.kro.kr"
+            echo "📊 컨테이너 상태:"
+            docker compose -f docker-compose-prod.yml ps

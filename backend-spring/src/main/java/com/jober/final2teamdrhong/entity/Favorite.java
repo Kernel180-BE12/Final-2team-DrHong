@@ -17,6 +17,11 @@ import org.hibernate.annotations.SQLRestriction;
 @SQLRestriction("is_deleted = false")
 public class Favorite extends BaseEntity {
 
+    public enum TemplateType {
+        INDIVIDUAL,
+        PUBLIC
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "favorite_id")

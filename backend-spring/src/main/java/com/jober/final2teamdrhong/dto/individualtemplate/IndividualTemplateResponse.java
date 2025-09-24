@@ -18,6 +18,8 @@ public class IndividualTemplateResponse {
     private Integer workspaceId;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private Boolean isDeleted;
+    private IndividualTemplate.Status status;
 
 
     public static IndividualTemplateResponse toResponse(IndividualTemplate entity) {
@@ -28,7 +30,9 @@ public class IndividualTemplateResponse {
                 entity.getButtonTitle(),
                 entity.getWorkspace().getWorkspaceId(),
                 entity.getCreatedAt(),
-                entity.getUpdatedAt()
+                entity.getUpdatedAt(),
+                entity.getIsDeleted(),
+                entity.getStatus()
         );
     }
 }

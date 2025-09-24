@@ -8,19 +8,11 @@ services:
       - redis-data:/data
 
   spring-boot:
-    build:
-      context: .
-      dockerfile: backend-spring/Dockerfile
-    container_name: spring-boot
-    ports:
-      - "8080:8080"
-    depends_on:
-      - redis
-    environment:
-      - SPRING_PROFILES_ACTIVE=docker
-      - DB_PASSWORD=${DB_PASSWORD}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - MAIL_PASSWORD=${MAIL_PASSWORD}
+    # 로컬에서는 IDE로 직접 실행할 것이므로, Docker 서비스를 비활성화합니다.
+    image: alpine:latest
+    container_name: spring-boot-disabled
+    command: "echo 'Spring Boot is disabled in override file. Run it from your IDE.'"
+    ports: [ ] # 8080번 포트 충돌 방지
 
   python-ai:
     build:
@@ -28,24 +20,18 @@ services:
       dockerfile: backend-ai/Dockerfile
     container_name: python-ai
     ports:
-      - "8001:8001"
+      - "8000:8000"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
 
   frontend:
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
-    container_name: frontend
-    ports:
-      - "80:80"
-    depends_on:
-      spring-boot:
-        condition: service_started
-      python-ai:
-        condition: service_started
+    # 로컬에서는 별도 스크립트로 실행할 것이므로, Docker 서비스를 비활성화합니다.
+    image: alpine:latest
+    container_name: frontend-disabled
+    command: "echo 'Frontend is disabled in override file. Open terminal and run: cd frontend && npm start'"
+    ports: [ ] # 3000번 포트 충돌 방지
 
 volumes:
   redis-data:

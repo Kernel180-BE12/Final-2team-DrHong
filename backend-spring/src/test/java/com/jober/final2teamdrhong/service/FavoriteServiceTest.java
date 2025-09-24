@@ -1,5 +1,6 @@
 package com.jober.final2teamdrhong.service;
 
+import com.jober.final2teamdrhong.dto.favorite.FavoritePageRequest;
 import com.jober.final2teamdrhong.dto.favorite.FavoriteResponse;
 import com.jober.final2teamdrhong.dto.favorite.IndividualTemplateFavoriteRequest;
 import com.jober.final2teamdrhong.dto.favorite.PublicTemplateFavoriteRequest;
@@ -16,6 +17,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -93,9 +99,7 @@ class  FavoriteServiceTest {
                 .when(favoriteRepository).validateIndividualTemplateNotExists(mockWorkspace, mockIndividualTemplate);
 
         // when & then
-        assertThrows(IllegalArgumentException.class, () -> {
-            favoriteService.createIndividualTemplateFavorite(mockJwtClaims, request);
-        });
+        assertThrows(IllegalArgumentException.class, () -> favoriteService.createIndividualTemplateFavorite(mockJwtClaims, request));
         verify(favoriteRepository, never()).save(any(Favorite.class));
     }
 
@@ -133,9 +137,53 @@ class  FavoriteServiceTest {
                 .when(favoriteRepository).validatePublicTemplateNotExists(mockWorkspace, mockPublicTemplate);
 
         // when & then
-        assertThrows(IllegalArgumentException.class, () -> {
-            favoriteService.createPublicTemplateFavorite(mockJwtClaims, request);
-        });
+        assertThrows(IllegalArgumentException.class, () -> favoriteService.createPublicTemplateFavorite(mockJwtClaims, request));
         verify(favoriteRepository, never()).save(any(Favorite.class));
+    }
+
+
+
+
+
+    // ====================== Read ======================
+    @Test
+    @DisplayName("성공(서비스): 즐겨찾기 목록 페이징 조회")
+    void getFavoritesByWorkspace_Success() {
+        // given
+        Integer workspaceId = 1;
+        FavoritePageRequest pageRequest = new FavoritePageRequest();
+
+        Favorite publicFavorite = Favorite.builder().workspace(mockWorkspace).publicTemplate(mockPublicTemplate).build();
+        Page<Favorite> mockPage = new PageImpl<>(List.of(publicFavorite));
+
+        when(workspaceRepository.findByIdOrThrow(workspaceId, mockJwtClaims.getUserId())).thenReturn(mockWorkspace);
+        when(favoriteRepository.findFavorites(eq(mockWorkspace), any(), any(Pageable.class))).thenReturn(mockPage);
+
+        // when
+        Page<FavoriteResponse> result = favoriteService.getFavoritesByWorkspace(mockJwtClaims, workspaceId, Favorite.TemplateType.PUBLIC, pageRequest);
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.getTotalElements()).isEqualTo(1);
+        assertThat(result.getContent().get(0).getTemplateType()).isEqualTo("PUBLIC");
+        verify(workspaceRepository).findByIdOrThrow(workspaceId, mockJwtClaims.getUserId());
+        verify(favoriteRepository).findFavorites(eq(mockWorkspace), eq(Favorite.TemplateType.PUBLIC), any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("실패(서비스): 권한 없는 워크스페이스의 즐겨찾기 조회 시 예외 발생")
+    void getFavoritesByWorkspace_Fail_Unauthorized() {
+        // given
+        Integer workspaceId = 2; // User 1 does not own workspace 2
+        FavoritePageRequest pageRequest = new FavoritePageRequest();
+
+        when(workspaceRepository.findByIdOrThrow(workspaceId, mockJwtClaims.getUserId()))
+                .thenThrow(new IllegalArgumentException("해당 워크스페이스를 찾을 수 없거나 접근 권한이 없습니다."));
+
+        // when & then
+        assertThrows(IllegalArgumentException.class, () -> favoriteService.getFavoritesByWorkspace(mockJwtClaims, workspaceId, null, pageRequest));
+
+        verify(workspaceRepository).findByIdOrThrow(workspaceId, mockJwtClaims.getUserId());
+        verify(favoriteRepository, never()).findFavorites(any(), any(), any());
     }
 }
