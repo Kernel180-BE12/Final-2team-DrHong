@@ -48,7 +48,8 @@ public class FavoriteController {
     public ResponseEntity<FavoriteResponse> createIndividualTemplateFavorite(
             @AuthenticationPrincipal JwtClaims jwtClaims,
             @Valid @RequestBody IndividualTemplateFavoriteRequest request) {
-        FavoriteResponse response = favoriteService.createIndividualTemplateFavorite(jwtClaims, request);
+        Integer userId = jwtClaims.getUserId();
+        FavoriteResponse response = favoriteService.createIndividualTemplateFavorite(request, userId);
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
@@ -71,7 +72,8 @@ public class FavoriteController {
     public ResponseEntity<FavoriteResponse> createPublicTemplateFavorite(
             @AuthenticationPrincipal JwtClaims jwtClaims,
             @Valid @RequestBody PublicTemplateFavoriteRequest request) {
-        FavoriteResponse response = favoriteService.createPublicTemplateFavorite(jwtClaims, request);
+        Integer userId = jwtClaims.getUserId();
+        FavoriteResponse response = favoriteService.createPublicTemplateFavorite(request, userId);
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
@@ -94,8 +96,8 @@ public class FavoriteController {
             @PathVariable("workspaceId") Integer workspaceId,
             @RequestParam(value = "templateType", required = false) TemplateType templateType,
             @Valid @ParameterObject FavoritePageRequest favoritePageRequest) {
-
-        Page<FavoriteResponse> favorites = favoriteService.getFavoritesByWorkspace(jwtClaims, workspaceId, templateType, favoritePageRequest);
+        Integer userId = jwtClaims.getUserId();
+        Page<FavoriteResponse> favorites = favoriteService.getFavoritesByWorkspace(workspaceId, templateType, favoritePageRequest, userId);
         return ResponseEntity.ok(favorites);
     }
 }
