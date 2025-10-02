@@ -207,15 +207,18 @@ Spring Boot와 AI 기술을 결합한 지능형 알림톡 템플릿 관리 시�
 | DELETE | `/api/workspaces/{workspaceId}` | 워크스페이스 삭제 | `workspaceId`, `jwtClaims` | `WorkspaceResponse.SimpleDTO` |
 
 ### 📝 **개인 템플릿 API** (`/api/templates`)
-| Method | Endpoint | Description | Request | Response |
-|--------|----------|-------------|---------|----------|
-| POST | `/api/templates/{workspaceId}` | 빈 템플릿 생성 | `workspaceId`, `TemplateCreateRequest` | `IndividualTemplateResponse` |
-| POST | `/api/templates/{workspaceId}/async` | 빈 템플릿 생성 (비동기) | `workspaceId`, `TemplateCreateRequest` | `CompletableFuture<...>` |
-| POST | `/api/templates/{workspaceId}/from-public/{publicTemplateId}` | 공용 템플릿 복사 | `workspaceId`, `publicTemplateId` | `IndividualTemplateResponse` |
-| GET | `/api/templates/{workspaceId}` | 템플릿 목록 조회 | `workspaceId` | `List<IndividualTemplateResponse>` |
-| GET | `/api/templates/{workspaceId}/{templateId}` | 템플릿 상세 조회 | `workspaceId`, `templateId` | `IndividualTemplateResponse` |
-| PUT | `/api/templates/{workspaceId}/{templateId}` | 템플릿 수정 | `workspaceId`, `templateId`, `TemplateUpdateRequest` | `IndividualTemplateResponse` |
-| DELETE | `/api/templates/{workspaceId}/{templateId}` | 템플릿 삭제 | `workspaceId`, `templateId` | String |
+| Method | Endpoint                                                          | Description     | Request | Response                          |
+|--------|-------------------------------------------------------------------|-----------------|---------|-----------------------------------|
+| POST | `/api/templates/{workspaceId}`                                    | 빈 템플릿 생성        | `workspaceId`, `TemplateCreateRequest` | `IndividualTemplateResponse`      |
+| POST | `/api/templates/{workspaceId}/async`                              | 빈 템플릿 생성 (비동기)  | `workspaceId`, `TemplateCreateRequest` | `IndividualTemplateResponse`                           |
+| POST | `/api/templates/{workspaceId}/from-public/{publicTemplateId}`     | 공용 템플릿 복사       | `workspaceId`, `publicTemplateId` | `IndividualTemplateResponse`      |
+| POST | `/api/templates/{workspaceId}/from-public/{publicTemplateId}/async` | 공용 템플릿 복사 (비동기) | `workspaceId`, `publicTemplateId` | `IndividualTemplateResponse`      |
+| GET | `/api/templates/{workspaceId}`                                    | 템플릿 목록 조회       | `workspaceId` | `List<IndividualTemplateResponse>` |
+| GET | `/api/templates/{workspaceId}/{templateId}`                       | 템플릿 상세 조회       | `workspaceId`, `templateId` | `IndividualTemplateResponse`      |
+| GET | `/api/templates/{workspaceId}/{templateId}/async`                 | 템플릿 상세 조회 (비동기) | `workspaceId`, `templateId` | `IndividualTemplateResponse`      |
+| PUT | `/api/templates/{workspaceId}/{templateId}`                       | 템플릿 수정          | `workspaceId`, `templateId`, `TemplateUpdateRequest` | `IndividualTemplateResponse`      |
+| PUT | `/api/templates/{workspaceId}/{templateId}/status`                | 템플릿 상태 수정 | `workspaceId, templateId, IndividualTemplateStatusUpdateRequest` | `IndividualTemplateResponse`    |
+| DELETE | `/api/templates/{workspaceId}/{templateId}`                       | 템플릿 삭제          | `workspaceId`, `templateId` | String                            |
 
 ### 🌐 **공용 템플릿 API** (`/api/public-templates`)
 | Method | Endpoint | Description | Parameters | Response |
